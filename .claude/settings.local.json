@@ -5,7 +5,9 @@
       "PowerShell(npm *)",
       "PowerShell(winget install *)",
       "Read(//c/c/Users/Shadow/Desktop/Amine database/node_modules/next/dist/**)",
-      "Read(//c/c/Users/Shadow/Desktop/Amine database/node_modules/next/dist/docs/**)"
+      "Read(//c/c/Users/Shadow/Desktop/Amine database/node_modules/next/dist/docs/**)",
+      "Bash(npm install *)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000\" -UseBasicParsing -TimeoutSec 30; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output \"LENGTH: $\\($r.Content.Length\\) bytes\" } catch { Write-Output \"ERROR: $\\($_.Exception.Message\\)\" })"
     ]
   }
 }
