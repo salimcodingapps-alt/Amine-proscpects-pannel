@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx --yes create-next-app@latest . --ts --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --use-npm --yes)",
+      "PowerShell(npm *)",
+      "PowerShell(winget install *)",
+      "Read(//c/c/Users/Shadow/Desktop/Amine database/node_modules/next/dist/**)",
+      "Read(//c/c/Users/Shadow/Desktop/Amine database/node_modules/next/dist/docs/**)"
+    ]
+  }
+}

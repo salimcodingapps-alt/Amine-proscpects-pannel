@@ -1,0 +1,120 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Dark-only palette for MVP — `dark` class is applied on <html> in the root layout. */
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Brand design tokens — Automotive BI CRM.
+  Premium automotive identity: near-black surfaces + gold accent.
+  Source of truth for these values is the product spec's Color System.
+*/
+:root {
+  --radius: 0.5rem;
+
+  --background: #0a0a0a; /* Background */
+  --foreground: #ffffff; /* Text Primary */
+
+  --surface: #111111; /* Surface (raised panels, sidebar) */
+
+  --card: #171717; /* Card */
+  --card-foreground: #ffffff;
+
+  --popover: #171717;
+  --popover-foreground: #ffffff;
+
+  --primary: #f4c430; /* Primary Accent (gold) */
+  --primary-foreground: #0a0a0a; /* dark text on gold for contrast */
+
+  --secondary: #1f1f1f;
+  --secondary-foreground: #ffffff;
+
+  --muted: #1a1a1a;
+  --muted-foreground: #9a9a9a; /* Text Secondary */
+
+  --accent: #1f1f1f;
+  --accent-foreground: #ffffff;
+
+  --destructive: #ef4444; /* Danger */
+  --destructive-foreground: #ffffff;
+
+  --success: #22c55e; /* Success */
+  --warning: #f59e0b; /* Warning */
+  --brand-secondary: #c89b2d; /* Secondary Accent */
+
+  --border: #262626;
+  --input: #262626;
+  --ring: #f4c430;
+}
+
+/* Mirror the palette under `.dark` so shadcn dark-variant components resolve identically. */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ffffff;
+  --surface: #111111;
+  --card: #171717;
+  --card-foreground: #ffffff;
+  --popover: #171717;
+  --popover-foreground: #ffffff;
+  --primary: #f4c430;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #ffffff;
+  --muted: #1a1a1a;
+  --muted-foreground: #9a9a9a;
+  --accent: #1f1f1f;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --brand-secondary: #c89b2d;
+  --border: #262626;
+  --input: #262626;
+  --ring: #f4c430;
+}
+
+/* Expose tokens to Tailwind utilities (bg-background, text-muted-foreground, border-border, ...). */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
