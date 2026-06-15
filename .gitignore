@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local dev server runtime artifacts (created when launching `next dev` in background)
+.dev-server.pid
+dev-server.log
+dev-server.err.log
