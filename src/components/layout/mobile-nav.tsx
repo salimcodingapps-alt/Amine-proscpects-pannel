@@ -6,6 +6,7 @@ import { Menu } from "lucide-react";
 import { BrandMark } from "@/components/layout/brand-mark";
 import { NavLinks } from "@/components/layout/nav-links";
 import { UserMenu, type SessionUser } from "@/components/layout/user-menu";
+import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -13,13 +14,22 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import type { WorkspaceSummary } from "@/lib/workspace/types";
 
 /**
  * Mobile header with a hamburger that opens the navigation drawer.
  * Visible only below the `md` breakpoint; the drawer reuses NavLinks
  * and closes itself on navigation.
  */
-export function MobileNav({ user }: { user: SessionUser }) {
+export function MobileNav({
+  user,
+  workspaces,
+  activeWorkspaceId,
+}: {
+  user: SessionUser;
+  workspaces: WorkspaceSummary[];
+  activeWorkspaceId: string | null;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -34,6 +44,12 @@ export function MobileNav({ user }: { user: SessionUser }) {
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <div className="flex h-16 items-center border-b border-border px-4">
             <BrandMark />
+          </div>
+          <div className="border-b border-border p-3">
+            <WorkspaceSwitcher
+              workspaces={workspaces}
+              activeId={activeWorkspaceId}
+            />
           </div>
           <div className="flex-1 overflow-y-auto p-3">
             <NavLinks onNavigate={() => setOpen(false)} />

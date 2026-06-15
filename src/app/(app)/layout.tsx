@@ -4,6 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { AppShell } from "@/components/layout/app-shell";
 import type { SessionUser } from "@/components/layout/user-menu";
+import {
+  listMyWorkspaces,
+  resolveActiveWorkspace,
+} from "@/lib/workspace/queries";
 
 // Authenticated, per-user pages — never prerender them.
 export const dynamic = "force-dynamic";
@@ -36,7 +40,18 @@ export default async function AppLayout({
     name: (user.user_metadata?.full_name as string | undefined) ?? null,
   };
 
-  return <AppShell user={sessionUser}>{children}</AppShell>;
+  const workspaces = await listMyWorkspaces(supabase, user.id);
+  const activeWorkspace = await resolveActiveWorkspace(workspaces);
+
+  return (
+    <AppShell
+      user={sessionUser}
+      workspaces={workspaces}
+      activeWorkspaceId={activeWorkspace?.id ?? null}
+    >
+      {children}
+    </AppShell>
+  );
 }
 
 function SupabaseNotConfigured() {
