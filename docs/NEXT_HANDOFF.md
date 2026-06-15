@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work after `/clear`. Read this, `CLAUDE.md`/`AGENTS.md`, and `docs/CLAUDE_WORKFLOW.md` before doing anything.
 
-_Last updated: 2026-06-15 — end of Block 4 (Schema / Business Data)._
+_Last updated: 2026-06-15 — end of Block 5 (Search / Filter / Sort), smoke-tested, awaiting checkpoint commit._
 
 ---
 
@@ -10,12 +10,12 @@ _Last updated: 2026-06-15 — end of Block 4 (Schema / Business Data)._
 
 **Automotive Business Intelligence CRM** — a multi-tenant, AI-native web app to upload messy automotive supplier data (spreadsheets/images), have AI clean + dedupe + brand-tag it, and let teams search/manage it. Built block-by-block per the master spec.
 
-**Status:** Blocks 1–4 complete, validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), and now has its **first business-data table** (`businesses`) with workspace-scoped RLS + grants and a working manual CRUD UI at `/database`. Block 4 is implemented and smoke-tested but **not yet committed** (see §12). Ready to commit Block 4, then begin Block 5 in a fresh context.
+**Status:** Blocks 1–5 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, and now **server-side search / filter / sort / pagination** at `/database`. **Blocks 1–4 are committed (latest `b32d8dd`); Block 5 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
 
 ## 2. Current block
 
-- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data).
-- **Next up:** **Block 5 — NOT started; do not start without confirmation.** Scope to be confirmed with the user. Likely candidates from the master spec: data ingestion (spreadsheet upload → review/import pipeline) or search/filter UX over the `businesses` table. Decide with the user before planning.
+- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort — pending checkpoint commit).
+- **Next up:** **Block 6 — NOT started; do not start without confirmation.** Likely candidate from the master spec: data ingestion (spreadsheet/image upload → review/import pipeline). Confirm scope with the user before planning.
 
 ## 3. What has been implemented so far
 
@@ -42,7 +42,7 @@ _Last updated: 2026-06-15 — end of Block 4 (Schema / Business Data)._
   - **Table GRANTs** to `authenticated` (mandatory alongside RLS).
 - App: `src/lib/workspace/{types,queries,actions}.ts`, `workspace-switcher`, `workspace-settings`. Active workspace = httpOnly cookie `active_workspace_id`, always membership-validated server-side.
 
-**Block 4 — Schema / Business Data (this block — commit PENDING)**
+**Block 4 — Schema / Business Data (commit `b32d8dd`)**
 - **First business-data table** (migration `supabase/migrations/0002_businesses.sql`, applied + verified in the SQL Editor):
   - `business_status` enum (`new | contacted | qualified | inactive`).
   - `businesses` table — workspace-scoped (`workspace_id` FK → `workspaces`, `on delete cascade`); `company_name` required; Algeria-first fields (`wilaya`, `country` default `'Algeria'`); `business_type` **free text**; `supported_brands text[]`; `status`; audit columns (`created_by`, `modified_by`, `created_at`, `updated_at`); `deleted_at` for **soft delete**; reserved-but-unused `duplicate_score`, `latitude`, `longitude`.
@@ -56,6 +56,19 @@ _Last updated: 2026-06-15 — end of Block 4 (Schema / Business Data)._
   - `/database` page wired to the active workspace, keyed by `active.id`.
 - **Validated:** full 8-point smoke test PASSED against real Supabase (create, list+status, edit-persist, archive-hides, tenant isolation on switch, scoped create in 2nd workspace, reload persistence).
 
+**Block 5 — Search / Filter / Sort (commit PENDING)**
+- **Server-side** search / filter / sort / pagination over `businesses`; no schema change, no migration, no index. RLS unchanged.
+- `listBusinesses(supabase, workspaceId, filters)` now returns `{ items, total, page, pageSize, pageCount }`. Always keeps `workspace_id` scope + `deleted_at is null`.
+  - **Search:** case-insensitive `ilike %term%` OR'd across 8 columns (company_name, contact_name, phone, email, city, wilaya, business_type, notes). The term is **sanitized** (strips PostgREST/`LIKE` meta chars `, . ( ) " : % _ * \`) so user input can't break or inject into the `.or()` string.
+  - **Filters:** `status` exact enum; `wilaya` / `business_type` `ilike` contains; `brand` → canonicalized then `.contains("supported_brands", [brand])`.
+  - **Sort:** newest / oldest / company A–Z / Z–A, with `id` as a stable tiebreaker for deterministic paging.
+  - **Pagination:** `count: "exact"` + `.range()`, page size **25**.
+- **Brand normalization** (`src/lib/businesses/brands.ts`): `canonicalizeBrand` / `normalizeBrandList` map aliases/casing to canonical names (e.g. `vw`→Volkswagen, `mercedes`→Mercedes-Benz). Used in the brand filter AND on create/update write (trim, drop blanks, case-insensitive dedup). This fixed the case-sensitive brand-filter bug found in smoke testing.
+- **URL state:** `q`, `status`, `wilaya`, `type`, `brand`, `sort`, `page` — refresh/back/forward preserve the view. Debounced (~350ms) text inputs; selects commit immediately; any filter change resets to page 1.
+- `/database/page.tsx` awaits Next 16 async `searchParams`, validates/clamps them, runs the filtered query. (`/database` is dynamic `ƒ` — expected, since `searchParams` opts into request-time rendering.)
+- **Dev seed** (`supabase/seeds/dev_businesses.sql`): DEV-ONLY, ~41 realistic automotive records into one existing workspace; re-runnable (skips already-seeded rows); does NOT create tables / alter RLS / add features. Apply manually in the SQL Editor (which bypasses RLS — required for seeding).
+- **Validated:** full Block 5 smoke test PASSED with seed data — search across all fields, all filters, all sorts, pagination, URL/back/forward state, workspace isolation, CRUD-still-works, and the brand filter is now case-insensitive (`renault`/`bmw`/`mercedes`/`vw` all match).
+
 ## 4. Files created
 
 **Block 4:**
@@ -63,11 +76,21 @@ _Last updated: 2026-06-15 — end of Block 4 (Schema / Business Data)._
 - `src/lib/businesses/{types,queries,actions}.ts`
 - `src/components/business/business-manager.tsx`
 
+**Block 5:**
+- `src/components/business/business-toolbar.tsx` (search/filter/sort controls; URL-driven, client)
+- `src/components/business/business-pagination.tsx` (Previous/Next, URL-driven, client)
+- `src/lib/businesses/brands.ts` (brand canonicalization helpers)
+- `supabase/seeds/dev_businesses.sql` (DEV-ONLY seed data)
+
 (See git history for Block 1–3 file lists; Block 3 files listed in prior handoff revisions.)
 
-## 5. Files modified (Block 4)
+## 5. Files modified (Block 5)
 
-- `src/app/(app)/database/page.tsx` (replaced the placeholder; server-fetches businesses for the active workspace and renders `BusinessManager`).
+- `src/lib/businesses/types.ts` (sort/filter/result types: `BusinessSort`, `BUSINESS_SORTS`, `BUSINESS_PAGE_SIZE`, `BusinessListFilters`, `BusinessListResult`).
+- `src/lib/businesses/queries.ts` (`listBusinesses` rewritten for server-side search/filter/sort/pagination; search-term sanitizer; brand canonicalization).
+- `src/lib/businesses/actions.ts` (`buildValues` normalizes brands via `normalizeBrandList`).
+- `src/components/business/business-manager.tsx` (renders toolbar + pagination; total-count + no-match empty state; CRUD untouched).
+- `src/app/(app)/database/page.tsx` (awaits/parses/validates `searchParams`; calls filtered query; passes paging metadata).
 - `docs/NEXT_HANDOFF.md` (this file).
 
 ## 6. Important decisions made
@@ -77,9 +100,14 @@ _Last updated: 2026-06-15 — end of Block 4 (Schema / Business Data)._
 - **Block 4 specifics:**
   - **One core table named `businesses`** (not `suppliers`) — the CRM holds suppliers, importers, wholesalers, garages, retailers, prospects, etc. `business_type` is **free text** for now (no enum/table).
   - **All workspace members** can create/view/update/soft-delete records (CRUD is membership-gated, **not** role-gated).
-  - **Soft delete only** (`deleted_at`) — no hard-delete grant or policy. The app hides archived rows by default; `listBusinesses({ includeDeleted: true })` can surface them later (no restore UI yet — deferred).
+  - **Soft delete only** (`deleted_at`) — no hard-delete grant or policy. The app hides archived rows by default (no restore UI yet — deferred). NOTE: Block 5 simplified `listBusinesses` so it ALWAYS filters `deleted_at is null` (the old `includeDeleted` option was removed; add it back when a restore UI is built).
   - **Standard client INSERT** (no RPC needed — no workspace-bootstrap chicken-and-egg like Block 3). RLS `with check` enforces membership + non-forgeable authorship.
 - **Block 4 lesson — table GRANTs must be tightened, not just added:** Supabase ships `ALTER DEFAULT PRIVILEGES` that grant **ALL** on new `public` tables to `authenticated` (incl. `REFERENCES`/`TRIGGER`/`TRUNCATE`). A bare additive `grant select, insert, update` leaves those in place. **Pattern:** `revoke all on table <t> from anon, authenticated;` then `grant <minimal> to authenticated;`. Verify with `information_schema.role_table_grants` (expect exactly the intended privileges; `anon` should have 0 rows). This refines the Block 3 lesson ("RLS needs grants") — the grant must also be *minimal*.
+- **Block 5 specifics:**
+  - **All search/filter/sort/pagination is server-side** (no client-side filtering of a pre-loaded array) — keeps `count`, pagination, and workspace scope correct. **URL search params are the source of truth** so refresh/back/forward work.
+  - **Page size = 25**; simple Previous/Next (no infinite scroll). Search debounced ~350ms.
+  - **Brand filter is canonical-match, not fuzzy:** `supported_brands` stays `text[]`. Because PostgREST array-contains is exact/case-sensitive, we **canonicalize brands both on write and in the filter** (`lib/businesses/brands.ts`) so e.g. `renault`/`RENAULT`/`vw` all resolve to the stored canonical name. Unknown brands are kept as-typed (trimmed). No brands table (deferred).
+  - **No migration / no index in Block 5** — `ilike`/sort are fine at MVP row counts. STANDING DECISION: if row counts grow enough to need an index (e.g. trigram on `company_name`), STOP and ask before adding a migration.
 
 ## 7. Standing rules for every NEW table (carry forward)
 
@@ -117,15 +145,17 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 11. Build / typecheck / test results
 
-- `npx tsc --noEmit` → **clean** (exit 0).
-- `npm run build` → **clean**; 11 routes. `/database`, `/settings`, `/dashboard`, `/upload`, `/auth/callback` dynamic; auth pages static.
+- `npx tsc --noEmit` → **clean** (exit 0) after Block 5 + brand fix.
+- `npm run build` → **clean**; 11 routes. `/database`, `/settings`, `/dashboard`, `/upload`, `/auth/callback` dynamic; auth pages static. (`/database` dynamic is expected — `searchParams` is a request-time API.)
 - **Block 4 smoke test (user-confirmed, real Supabase):** all 8 checks PASS.
+- **Block 5 smoke test (user-confirmed, real Supabase + dev seed):** PASS — search across all 8 fields, status/wilaya/type/brand filters, all 4 sorts, pagination, URL + refresh/back/forward state, workspace isolation, CRUD-still-works. Brand filter confirmed case-insensitive (`renault`/`Renault`/`bmw`/`mercedes`→Mercedes-Benz/`vw`→Volkswagen) and brand create/edit normalizes casing + de-dups.
 
 ## 12. Known bugs or unfinished items
 
 - No known bugs. Limitations by design (deferred):
-  - **Business data is manual-entry only** — no spreadsheet/image upload, import, AI cleaning, OCR, duplicate detection, merge UI, advanced search/filter, or map view yet. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused.)
-  - **No restore UI** for archived records (soft-delete works; un-archive deferred).
+  - **Ingestion not built** — no spreadsheet/image upload, import, AI cleaning, OCR, duplicate detection, merge UI, or map view yet. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused.) Business data is manual-entry only (search/filter/sort now exist as of Block 5).
+  - **No restore UI** for archived records (soft-delete works; un-archive deferred). `listBusinesses` always hides `deleted_at` rows (the `includeDeleted` option was removed in Block 5 — re-add when building restore).
+  - **Brand filter is canonical-match only** — unknown/odd-cased brands stored *before* Block 5 won't retroactively match a different-cased filter; new/edited records and the dev seed are canonical.
   - **Invites still deferred** — members are only auto-provisioned on signup; most workspaces have one member.
   - **Member identity:** only the current user's own email resolves (no profiles table).
 - Email confirmation off (dev only) — re-enable for prod.
@@ -133,11 +163,23 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 13. Git status summary
 
-- Branch: **main**. Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3).
-- **Uncommitted (Block 4):** new `supabase/migrations/0002_businesses.sql`, `src/lib/businesses/`, `src/components/business/`; modified `src/app/(app)/database/page.tsx` and this handoff doc. Also a pre-existing `.claude/settings.local.json` change (local settings, incidental).
-- **Recommended checkpoint:** `git add . && git commit -m "Block 4: schema / business data"`.
+- Branch: **main**. Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4).
+- **Blocks 1–4 committed** (latest `b32d8dd`).
+- **Block 5 (Search / Filter / Sort) — implemented + smoke-tested, NOT yet committed.** Working tree:
+  - Modified: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/business-manager.tsx`, `src/app/(app)/database/page.tsx`, `docs/NEXT_HANDOFF.md`.
+  - New (untracked): `src/components/business/business-toolbar.tsx`, `src/components/business/business-pagination.tsx`, `src/lib/businesses/brands.ts`, `supabase/seeds/dev_businesses.sql`.
+  - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental).
+  - No new migration (Block 5 is query/UI only; the seed is dev-only data, not a migration).
+- **Recommended checkpoint (smoke test passed — safe to commit now):**
+  ```
+  git add .
+  git commit -m "Block 5: search / filter / sort"
+  ```
+  (Consider committing `.claude/settings.local.json` separately or leaving it; it is incidental local settings.)
 
 ## 14. Exact next prompt to paste after `/clear`
+
+> First confirm Block 5 is committed (see §13). If not, commit the checkpoint before starting Block 6.
 
 ```
 Resuming the Automotive BI CRM build after a context reset.
@@ -147,12 +189,15 @@ First, read these before doing anything:
 - docs/NEXT_HANDOFF.md
 - docs/CLAUDE_WORKFLOW.md
 
-Then summarize: current project state, the last completed block (Block 4 — Schema /
-Business Data), and propose what Block 5 should cover (confirm scope with me).
+Then summarize: current project state, the last completed block (Block 5 — Search /
+Filter / Sort), confirm Block 5 is committed, and propose what Block 6 should cover
+(likely data ingestion: spreadsheet/image upload → review/import pipeline). Confirm
+scope with me.
 
 Do NOT write code yet. After summarizing, wait for my confirmation.
-When approved, plan Block 5 only. Follow the block-by-block + 100k smart-zone rules.
-Remember the standing rule for every new table: RLS enabled AND minimal table GRANTs
-(revoke all from anon/authenticated, then grant only what's needed). Scope all business
-data to workspace_id and reuse the is_workspace_member() helper in policies.
+When approved, plan Block 6 only. Follow the block-by-block + 100k smart-zone rules.
+Standing rule for every NEW table: RLS enabled AND minimal table GRANTs (revoke all
+from anon/authenticated, then grant only what's needed). Scope all business data to
+workspace_id and reuse the is_workspace_member() helper in policies. No hard delete
+unless explicitly approved. If an index/migration seems needed, stop and ask first.
 ```

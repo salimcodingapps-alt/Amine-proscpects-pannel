@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { BusinessToolbar } from "@/components/business/business-toolbar";
+import { BusinessPagination } from "@/components/business/business-pagination";
 import {
   archiveBusiness,
   createBusiness,
@@ -151,9 +153,20 @@ function formToInput(form: FormState): BusinessInput {
 export function BusinessManager({
   workspaceId,
   businesses,
+  total,
+  page,
+  pageCount,
+  hasFilters,
 }: {
   workspaceId: string;
   businesses: Business[];
+  /** Total rows matching the current filters (across all pages). */
+  total: number;
+  /** 1-based current page. */
+  page: number;
+  pageCount: number;
+  /** Whether any search/filter is currently applied (affects empty-state copy). */
+  hasFilters: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -225,10 +238,12 @@ export function BusinessManager({
         </p>
       ) : null}
 
+      <BusinessToolbar />
+
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {businesses.length} record{businesses.length === 1 ? "" : "s"} in this
-          workspace.
+          {total} {hasFilters ? "matching " : ""}record{total === 1 ? "" : "s"}
+          {hasFilters ? "" : " in this workspace"}.
         </p>
         {openForm !== "new" ? (
           <Button
@@ -258,11 +273,17 @@ export function BusinessManager({
 
       {businesses.length === 0 && openForm !== "new" ? (
         <Card className="p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            No business records yet. Click{" "}
-            <span className="text-foreground">Add business</span> to create the
-            first one.
-          </p>
+          {hasFilters ? (
+            <p className="text-sm text-muted-foreground">
+              No records match the current search or filters.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No business records yet. Click{" "}
+              <span className="text-foreground">Add business</span> to create the
+              first one.
+            </p>
+          )}
         </Card>
       ) : null}
 
@@ -340,6 +361,8 @@ export function BusinessManager({
           )
         )}
       </div>
+
+      <BusinessPagination page={page} pageCount={pageCount} />
     </div>
   );
 }

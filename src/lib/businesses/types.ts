@@ -57,3 +57,53 @@ export interface BusinessActionResult {
   /** Set by createBusiness with the new record id. */
   id?: string;
 }
+
+/** ----------------------------------------------------------------------------
+ * Block 5 — Search / Filter / Sort
+ * --------------------------------------------------------------------------- */
+
+/** Sort orders offered in the database list UI. */
+export type BusinessSort = "newest" | "oldest" | "name_asc" | "name_desc";
+
+export const BUSINESS_SORTS: { value: BusinessSort; label: string }[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "name_asc", label: "Company name A–Z" },
+  { value: "name_desc", label: "Company name Z–A" },
+];
+
+export const DEFAULT_BUSINESS_SORT: BusinessSort = "newest";
+
+/** Default and only page size for Block 5 pagination. */
+export const BUSINESS_PAGE_SIZE = 25;
+
+/**
+ * Server-side filters for listBusinesses. All optional; absent/empty fields are
+ * simply not applied. Workspace scope and the deleted_at filter are NOT part of
+ * this object — they are always enforced by the query itself.
+ */
+export interface BusinessListFilters {
+  /** Free-text search across the configured columns (sanitized server-side). */
+  search?: string;
+  status?: BusinessStatus;
+  wilaya?: string;
+  businessType?: string;
+  /** Single supported-brand value; matched against the supported_brands array. */
+  brand?: string;
+  sort?: BusinessSort;
+  /** 1-based page number. */
+  page?: number;
+  pageSize?: number;
+}
+
+/** Paginated result returned by listBusinesses. */
+export interface BusinessListResult {
+  items: Business[];
+  /** Total rows matching the filters (across all pages). */
+  total: number;
+  /** 1-based current page (clamped to a valid range). */
+  page: number;
+  pageSize: number;
+  /** Total number of pages (>= 1). */
+  pageCount: number;
+}

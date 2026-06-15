@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { normalizeBrandList } from "@/lib/businesses/brands";
 import {
   BUSINESS_STATUSES,
   type BusinessActionResult,
@@ -45,9 +46,12 @@ function buildValues(
     return { error: "Invalid status." };
   }
 
-  const supportedBrands = Array.isArray(input.supportedBrands)
-    ? input.supportedBrands.map((b) => b.trim()).filter((b) => b !== "")
-    : [];
+  // Normalize brands: trim, drop blanks, map aliases to canonical names, and
+  // deduplicate case-insensitively. Storing canonical values is what makes the
+  // brand filter reliable (see lib/businesses/brands.ts).
+  const supportedBrands = normalizeBrandList(
+    Array.isArray(input.supportedBrands) ? input.supportedBrands : []
+  );
 
   return {
     values: {
