@@ -107,3 +107,62 @@ export interface BusinessListResult {
   /** Total number of pages (>= 1). */
   pageCount: number;
 }
+
+/** ----------------------------------------------------------------------------
+ * Block 6 — CSV import
+ * --------------------------------------------------------------------------- */
+
+/** Hard cap on rows per import (safety; enforced client- AND server-side). */
+export const MAX_IMPORT_ROWS = 500;
+
+/** A field of BusinessInput that a CSV column can be mapped to. */
+export type ImportFieldKey =
+  | "companyName"
+  | "contactName"
+  | "phone"
+  | "email"
+  | "website"
+  | "address"
+  | "city"
+  | "wilaya"
+  | "country"
+  | "businessType"
+  | "supportedBrands"
+  | "status";
+
+/** Mappable fields, in display order. `required` blocks import until mapped. */
+export const IMPORTABLE_FIELDS: {
+  key: ImportFieldKey;
+  label: string;
+  required?: boolean;
+}[] = [
+  { key: "companyName", label: "Company name", required: true },
+  { key: "contactName", label: "Contact name" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+  { key: "website", label: "Website" },
+  { key: "address", label: "Address" },
+  { key: "city", label: "City" },
+  { key: "wilaya", label: "Wilaya" },
+  { key: "country", label: "Country" },
+  { key: "businessType", label: "Business type" },
+  { key: "supportedBrands", label: "Supported brands (comma-separated)" },
+  { key: "status", label: "Status" },
+];
+
+/** Per-row error reported by the import (1-based row number as seen by the user). */
+export interface ImportRowError {
+  row: number;
+  message: string;
+}
+
+/** Outcome of importBusinesses. */
+export interface BusinessImportResult {
+  /** Rows the server was asked to insert. */
+  attempted: number;
+  inserted: number;
+  skipped: number;
+  errors: ImportRowError[];
+  /** Set only on a whole-request failure (auth, bad workspace, over cap, DB). */
+  error?: string;
+}

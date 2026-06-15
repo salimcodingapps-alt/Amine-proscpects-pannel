@@ -1,77 +1,14 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { normalizeBrandList } from "@/lib/businesses/brands";
+import { buildValues, isUuid } from "@/lib/businesses/validation";
 import {
-  BUSINESS_STATUSES,
+  MAX_IMPORT_ROWS,
   type BusinessActionResult,
+  type BusinessImportResult,
   type BusinessInput,
+  type ImportRowError,
 } from "@/lib/businesses/types";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function isUuid(v: string) {
-  return UUID_RE.test(v);
-}
-
-/** Trim a free-text field; empty -> null so we don't store blank strings. */
-function cleanText(v?: string | null): string | null {
-  if (v == null) return null;
-  const t = v.trim();
-  return t === "" ? null : t;
-}
-
-/**
- * Validate + normalize the writable fields shared by create and update. Returns
- * a column->value map ready to merge with authorship/workspace columns, or an
- * error message. Does NOT include workspace_id / created_by / modified_by.
- */
-function buildValues(
-  input: BusinessInput
-): { values?: Record<string, unknown>; error?: string } {
-  const companyName = (input.companyName ?? "").trim();
-  if (companyName.length < 1 || companyName.length > 200) {
-    return { error: "Company name is required (1–200 characters)." };
-  }
-
-  const email = cleanText(input.email);
-  if (email && !EMAIL_RE.test(email)) {
-    return { error: "Please enter a valid email address." };
-  }
-
-  const status = input.status ?? "new";
-  if (!BUSINESS_STATUSES.includes(status)) {
-    return { error: "Invalid status." };
-  }
-
-  // Normalize brands: trim, drop blanks, map aliases to canonical names, and
-  // deduplicate case-insensitively. Storing canonical values is what makes the
-  // brand filter reliable (see lib/businesses/brands.ts).
-  const supportedBrands = normalizeBrandList(
-    Array.isArray(input.supportedBrands) ? input.supportedBrands : []
-  );
-
-  return {
-    values: {
-      company_name: companyName,
-      contact_name: cleanText(input.contactName),
-      phone: cleanText(input.phone),
-      email,
-      website: cleanText(input.website),
-      address: cleanText(input.address),
-      city: cleanText(input.city),
-      wilaya: cleanText(input.wilaya),
-      // country is NOT NULL in the DB; fall back to the Algeria-first default.
-      country: cleanText(input.country) ?? "Algeria",
-      business_type: cleanText(input.businessType),
-      supported_brands: supportedBrands,
-      notes: cleanText(input.notes),
-      status,
-    },
-  };
-}
 
 /**
  * Create a business record in the given workspace. Authorship is forced to the
@@ -169,4 +106,84 @@ export async function archiveBusiness(
 
   if (error) return { error: error.message };
   return {};
+}
+
+/**
+ * Bulk-insert business records from a CSV import, after the user has explicitly
+ * confirmed. Every row is RE-VALIDATED server-side (never trust the client):
+ * invalid rows are skipped and reported, not silently fixed or imported. Valid
+ * rows are inserted in one batch with workspace_id and authorship forced —
+ * created_by/modified_by = auth.uid() — exactly like createBusiness. Brands are
+ * canonicalized by buildValues. There is NO dedupe: every valid row becomes a
+ * new record. `inputs[i]` is reported as row i+1 (data-row order).
+ */
+export async function importBusinesses(
+  workspaceId: string,
+  inputs: BusinessInput[]
+): Promise<BusinessImportResult> {
+  const attempted = Array.isArray(inputs) ? inputs.length : 0;
+  const empty: BusinessImportResult = {
+    attempted,
+    inserted: 0,
+    skipped: attempted,
+    errors: [],
+  };
+
+  if (!isUuid(workspaceId)) return { ...empty, error: "Invalid workspace." };
+  if (!Array.isArray(inputs) || attempted === 0) {
+    return { ...empty, error: "No rows to import." };
+  }
+  if (attempted > MAX_IMPORT_ROWS) {
+    return {
+      ...empty,
+      error: `Too many rows: ${attempted}. The limit is ${MAX_IMPORT_ROWS} per import.`,
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ...empty, error: "Not authenticated." };
+
+  // Re-validate every row; collect the DB-ready values for the valid ones and
+  // per-row errors for the rest.
+  const rows: Record<string, unknown>[] = [];
+  const errors: ImportRowError[] = [];
+  inputs.forEach((input, i) => {
+    const built = buildValues(input);
+    if (built.error || !built.values) {
+      errors.push({ row: i + 1, message: built.error ?? "Invalid row." });
+      return;
+    }
+    rows.push({
+      ...built.values,
+      workspace_id: workspaceId,
+      created_by: user.id,
+      modified_by: user.id,
+    });
+  });
+
+  if (rows.length === 0) {
+    return { attempted, inserted: 0, skipped: attempted, errors };
+  }
+
+  const { error } = await supabase.from("businesses").insert(rows);
+  if (error) {
+    // The batch failed as a whole; nothing was inserted.
+    return {
+      attempted,
+      inserted: 0,
+      skipped: attempted,
+      errors,
+      error: error.message,
+    };
+  }
+
+  return {
+    attempted,
+    inserted: rows.length,
+    skipped: attempted - rows.length,
+    errors,
+  };
 }

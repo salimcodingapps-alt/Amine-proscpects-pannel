@@ -113,8 +113,20 @@
   * {
     border-color: var(--border);
   }
+  /* Dark-only app: render native form-control popups (e.g. <select> menus,
+     date pickers) with the dark UA palette instead of the default light one. */
+  :root {
+    color-scheme: dark;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
+  }
+  /* Native <select> dropdown options inherit the browser default (light) menu,
+     which makes text unreadable in dark mode until hovered. Force theme colors
+     on the option list so it is legible immediately. */
+  option {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
   }
 }

@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work after `/clear`. Read this, `CLAUDE.md`/`AGENTS.md`, and `docs/CLAUDE_WORKFLOW.md` before doing anything.
 
-_Last updated: 2026-06-15 — end of Block 5 (Search / Filter / Sort), smoke-tested, awaiting checkpoint commit._
+_Last updated: 2026-06-16 — end of Block 6 (CSV Import), smoke-tested, awaiting checkpoint commit._
 
 ---
 
@@ -10,12 +10,12 @@ _Last updated: 2026-06-15 — end of Block 5 (Search / Filter / Sort), smoke-tes
 
 **Automotive Business Intelligence CRM** — a multi-tenant, AI-native web app to upload messy automotive supplier data (spreadsheets/images), have AI clean + dedupe + brand-tag it, and let teams search/manage it. Built block-by-block per the master spec.
 
-**Status:** Blocks 1–5 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, and now **server-side search / filter / sort / pagination** at `/database`. **Blocks 1–4 are committed (latest `b32d8dd`); Block 5 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
+**Status:** Blocks 1–6 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, and now **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`. **Blocks 1–5 are committed (latest `53a0a8f`); Block 6 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
 
 ## 2. Current block
 
-- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort — pending checkpoint commit).
-- **Next up:** **Block 6 — NOT started; do not start without confirmation.** Likely candidate from the master spec: data ingestion (spreadsheet/image upload → review/import pipeline). Confirm scope with the user before planning.
+- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import — pending checkpoint commit).
+- **Next up:** **Block 7 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: duplicate detection (`duplicate_score` column already exists), a restore UI for archived records, member invites, or the **Google Maps scraper CSV preset** (see §6 / §12 deferred work).
 
 ## 3. What has been implemented so far
 
@@ -56,7 +56,7 @@ _Last updated: 2026-06-15 — end of Block 5 (Search / Filter / Sort), smoke-tes
   - `/database` page wired to the active workspace, keyed by `active.id`.
 - **Validated:** full 8-point smoke test PASSED against real Supabase (create, list+status, edit-persist, archive-hides, tenant isolation on switch, scoped create in 2nd workspace, reload persistence).
 
-**Block 5 — Search / Filter / Sort (commit PENDING)**
+**Block 5 — Search / Filter / Sort (commit `53a0a8f`)**
 - **Server-side** search / filter / sort / pagination over `businesses`; no schema change, no migration, no index. RLS unchanged.
 - `listBusinesses(supabase, workspaceId, filters)` now returns `{ items, total, page, pageSize, pageCount }`. Always keeps `workspace_id` scope + `deleted_at is null`.
   - **Search:** case-insensitive `ilike %term%` OR'd across 8 columns (company_name, contact_name, phone, email, city, wilaya, business_type, notes). The term is **sanitized** (strips PostgREST/`LIKE` meta chars `, . ( ) " : % _ * \`) so user input can't break or inject into the `.or()` string.
@@ -68,6 +68,17 @@ _Last updated: 2026-06-15 — end of Block 5 (Search / Filter / Sort), smoke-tes
 - `/database/page.tsx` awaits Next 16 async `searchParams`, validates/clamps them, runs the filtered query. (`/database` is dynamic `ƒ` — expected, since `searchParams` opts into request-time rendering.)
 - **Dev seed** (`supabase/seeds/dev_businesses.sql`): DEV-ONLY, ~41 realistic automotive records into one existing workspace; re-runnable (skips already-seeded rows); does NOT create tables / alter RLS / add features. Apply manually in the SQL Editor (which bypasses RLS — required for seeding).
 - **Validated:** full Block 5 smoke test PASSED with seed data — search across all fields, all filters, all sorts, pagination, URL/back/forward state, workspace isolation, CRUD-still-works, and the brand filter is now case-insensitive (`renault`/`bmw`/`mercedes`/`vw` all match).
+
+**Block 6 — CSV Import (commit PENDING)**
+- **CSV-only** bulk import at `/upload`: upload → map columns → review/validate → **explicitly confirmed** bulk insert into the active workspace's `businesses`. No XLSX, no AI, no OCR, no dedupe, no merge UI, no Supabase Storage, **no new tables, no migration, no staging table**.
+- **`papaparse` dependency added** (+ `@types/papaparse` dev). CSV is parsed **in the browser**; the uploaded file is **never stored** (parse and discard).
+- **Shared pure validation module** `src/lib/businesses/validation.ts` — extracted `buildValues` / `cleanText` / `isUuid` / `EMAIL_RE` / `UUID_RE` out of `actions.ts` (which is `"use server"` and can only export async fns) so the SAME validation runs in the client preview AND the server action. The module is intentionally free of `"use server"`, Supabase, Next, cookies — safe in both environments. **Existing create/update behavior is unchanged** by this refactor.
+- **Server action** `importBusinesses(workspaceId, inputs)` (in `actions.ts`): re-validates EVERY row server-side (client preview is not the gate), skips + reports invalid rows, batch-inserts valid rows with `workspace_id` and `created_by`/`modified_by` forced to `auth.uid()`, brands canonicalized via `normalizeBrandList`. **No dedupe** — every valid row becomes a new record. Caps at `MAX_IMPORT_ROWS = 500` (enforced in BOTH the parser and the action).
+- **UI** `src/components/business/business-importer.tsx` (client, 4 steps: upload / map / review / done). Auto-maps clean semantic headers; manual override per field; `company_name` required. Review shows valid·invalid counts, lists invalid rows with reasons, previews first 10 valid rows. Nothing writes until the "Import N valid rows" click.
+- **`/upload/page.tsx`** resolves the active workspace (mirrors `/database`) and renders `<BusinessImporter>` keyed by workspace id.
+- **Dark-mode dropdown fix** (`src/app/globals.css`): native `<select>` option popups used the browser's light palette (text unreadable until hover). Added `:root { color-scheme: dark }` + `option { background/color }` — fixes ALL native selects app-wide (database status/sort filters, import mapping, business-form status). No new shadcn components.
+- **Raw Google Maps scraper CSVs:** real exports have non-semantic headers (`hfpxzc href`, `qBF1Pd`, …), so auto-mapping can't recognize them — they fall back to all-manual mapping. **DECISION: Block 6 stays a generic CSV importer; no scraper-specific logic.** Interim workflow: the user cleans/normalizes the CSV to semantic headers before importing. A **Google Maps scraper CSV preset** (map known raw column codes by position/pattern) is **deferred to a future block** (see §12).
+- **Validated:** Block 6 smoke test PASSED — happy path + invalid-row handling (bad email, blank company name shown & skipped), a real cleaned **Boumerdes** CSV import of **64 rows**, imported records appear in `/database`, search + wilaya + brand filters work on them, workspace scoping holds, dropdown readability fixed. `tsc --noEmit` + `npm run build` clean. (>500-row cap not manually exercised — deferred; guarded in code.)
 
 ## 4. Files created
 
@@ -82,15 +93,28 @@ _Last updated: 2026-06-15 — end of Block 5 (Search / Filter / Sort), smoke-tes
 - `src/lib/businesses/brands.ts` (brand canonicalization helpers)
 - `supabase/seeds/dev_businesses.sql` (DEV-ONLY seed data)
 
+**Block 6:**
+- `src/lib/businesses/validation.ts` (PURE shared validation — `buildValues`/`cleanText`/`isUuid`/regexes; no `"use server"`/Supabase/Next)
+- `src/lib/businesses/csv.ts` (papaparse wrapper → `{ headers, rows }`; trims, skips blanks, enforces ≤500 cap)
+- `src/components/business/business-importer.tsx` (client 4-step import UI)
+
 (See git history for Block 1–3 file lists; Block 3 files listed in prior handoff revisions.)
 
-## 5. Files modified (Block 5)
+## 5. Files modified
 
+**Block 5:**
 - `src/lib/businesses/types.ts` (sort/filter/result types: `BusinessSort`, `BUSINESS_SORTS`, `BUSINESS_PAGE_SIZE`, `BusinessListFilters`, `BusinessListResult`).
 - `src/lib/businesses/queries.ts` (`listBusinesses` rewritten for server-side search/filter/sort/pagination; search-term sanitizer; brand canonicalization).
 - `src/lib/businesses/actions.ts` (`buildValues` normalizes brands via `normalizeBrandList`).
 - `src/components/business/business-manager.tsx` (renders toolbar + pagination; total-count + no-match empty state; CRUD untouched).
 - `src/app/(app)/database/page.tsx` (awaits/parses/validates `searchParams`; calls filtered query; passes paging metadata).
+
+**Block 6:**
+- `src/lib/businesses/actions.ts` (imports `buildValues`/`isUuid` from the new `validation.ts`; removed the now-extracted private helpers; added `importBusinesses`).
+- `src/lib/businesses/types.ts` (import types: `MAX_IMPORT_ROWS`, `ImportFieldKey`, `IMPORTABLE_FIELDS`, `ImportRowError`, `BusinessImportResult`).
+- `src/app/(app)/upload/page.tsx` (replaced the placeholder; resolves active workspace, renders `<BusinessImporter>`).
+- `src/app/globals.css` (dark-mode native `<select>`/`<option>` readability fix).
+- `package.json` / `package-lock.json` (papaparse + `@types/papaparse`).
 - `docs/NEXT_HANDOFF.md` (this file).
 
 ## 6. Important decisions made
@@ -108,6 +132,13 @@ _Last updated: 2026-06-15 — end of Block 5 (Search / Filter / Sort), smoke-tes
   - **Page size = 25**; simple Previous/Next (no infinite scroll). Search debounced ~350ms.
   - **Brand filter is canonical-match, not fuzzy:** `supported_brands` stays `text[]`. Because PostgREST array-contains is exact/case-sensitive, we **canonicalize brands both on write and in the filter** (`lib/businesses/brands.ts`) so e.g. `renault`/`RENAULT`/`vw` all resolve to the stored canonical name. Unknown brands are kept as-typed (trimmed). No brands table (deferred).
   - **No migration / no index in Block 5** — `ilike`/sort are fine at MVP row counts. STANDING DECISION: if row counts grow enough to need an index (e.g. trigram on `company_name`), STOP and ask before adding a migration.
+- **Block 6 specifics:**
+  - **CSV only** (no XLSX — Excel exports to CSV). **papaparse** for parsing (no hand-rolled CSV). Parse **in-browser**; **never store** the uploaded file (no Supabase Storage bucket/policies).
+  - **Review state is in-memory** during the flow — **no staging table, no migration**. The existing `businesses` INSERT path is reused (standard client insert under RLS).
+  - **Explicit confirmation required** before any insert; **server re-validates every row** (client preview is not the gate); **invalid rows are skipped + reported**, never auto-fixed. **≤500 rows** per import, enforced client- AND server-side. **No dedupe** (duplicates possible by design — documented to the user).
+  - **Validation is shared via a pure module** (`validation.ts`) precisely because `actions.ts` is `"use server"` and may only export async functions — a sync helper had to live elsewhere to be usable client-side. Keep `validation.ts` pure.
+  - **Generic importer only** — NO Google Maps scraper logic. Raw scraper headers are non-semantic, so the user cleans/normalizes CSVs to semantic headers first. A scraper preset is deferred (see §12).
+  - **Dark-mode select fix** is global (`color-scheme: dark` + `option` colors in `globals.css`); no shadcn select component added.
 
 ## 7. Standing rules for every NEW table (carry forward)
 
@@ -145,17 +176,19 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 11. Build / typecheck / test results
 
-- `npx tsc --noEmit` → **clean** (exit 0) after Block 5 + brand fix.
-- `npm run build` → **clean**; 11 routes. `/database`, `/settings`, `/dashboard`, `/upload`, `/auth/callback` dynamic; auth pages static. (`/database` dynamic is expected — `searchParams` is a request-time API.)
+- `npx tsc --noEmit` → **clean** (exit 0) after Block 6 + dropdown fix.
+- `npm run build` → **clean**; 11 routes. `/database` and `/upload` dynamic (both resolve auth/workspace at request time); auth pages static.
 - **Block 4 smoke test (user-confirmed, real Supabase):** all 8 checks PASS.
-- **Block 5 smoke test (user-confirmed, real Supabase + dev seed):** PASS — search across all 8 fields, status/wilaya/type/brand filters, all 4 sorts, pagination, URL + refresh/back/forward state, workspace isolation, CRUD-still-works. Brand filter confirmed case-insensitive (`renault`/`Renault`/`bmw`/`mercedes`→Mercedes-Benz/`vw`→Volkswagen) and brand create/edit normalizes casing + de-dups.
+- **Block 5 smoke test (user-confirmed, real Supabase + dev seed):** PASS — search/filter/sort/pagination/URL state/workspace isolation/CRUD; brand filter case-insensitive.
+- **Block 6 smoke test (user-confirmed, real Supabase):** PASS — upload + in-browser parse, header detection, column mapping (clean semantic headers), review/validation counts, confirmed import, **real cleaned Boumerdes CSV of 64 rows** imported, records appear in `/database`, search + wilaya + brand filters work on imported records, workspace scoping holds, invalid-row handling (bad email + blank company name skipped & shown), dark-mode dropdown readability fixed. (>500-row cap not manually exercised — guarded in code.)
 
 ## 12. Known bugs or unfinished items
 
 - No known bugs. Limitations by design (deferred):
-  - **Ingestion not built** — no spreadsheet/image upload, import, AI cleaning, OCR, duplicate detection, merge UI, or map view yet. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused.) Business data is manual-entry only (search/filter/sort now exist as of Block 5).
+  - **CSV import is generic only** — raw Google Maps scraper CSVs (non-semantic headers like `hfpxzc href`, `qBF1Pd`) require the user to clean/normalize to semantic headers first. **DEFERRED FUTURE BLOCK: a "Google Maps scraper CSV" preset** that maps known raw column codes by position/pattern (one-click "apply preset" on the mapping step). Not started.
+  - **No XLSX import** (CSV only). No AI cleaning, no OCR, no duplicate detection, no merge UI, no map view. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused.) **No import dedupe** — re-importing the same file creates duplicates (by design for now).
   - **No restore UI** for archived records (soft-delete works; un-archive deferred). `listBusinesses` always hides `deleted_at` rows (the `includeDeleted` option was removed in Block 5 — re-add when building restore).
-  - **Brand filter is canonical-match only** — unknown/odd-cased brands stored *before* Block 5 won't retroactively match a different-cased filter; new/edited records and the dev seed are canonical.
+  - **Brand filter is canonical-match only** — unknown/odd-cased brands stored *before* Block 5 won't retroactively match a different-cased filter; new/edited records, imports, and the dev seed are canonical.
   - **Invites still deferred** — members are only auto-provisioned on signup; most workspaces have one member.
   - **Member identity:** only the current user's own email resolves (no profiles table).
 - Email confirmation off (dev only) — re-enable for prod.
@@ -163,23 +196,24 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 13. Git status summary
 
-- Branch: **main**. Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4).
-- **Blocks 1–4 committed** (latest `b32d8dd`).
-- **Block 5 (Search / Filter / Sort) — implemented + smoke-tested, NOT yet committed.** Working tree:
-  - Modified: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/business-manager.tsx`, `src/app/(app)/database/page.tsx`, `docs/NEXT_HANDOFF.md`.
-  - New (untracked): `src/components/business/business-toolbar.tsx`, `src/components/business/business-pagination.tsx`, `src/lib/businesses/brands.ts`, `supabase/seeds/dev_businesses.sql`.
-  - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental).
-  - No new migration (Block 5 is query/UI only; the seed is dev-only data, not a migration).
-- **Recommended checkpoint (smoke test passed — safe to commit now):**
+- Branch: **main**. Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5).
+- **Blocks 1–5 committed** (latest `53a0a8f`).
+- **Block 6 (CSV Import) — implemented + smoke-tested, NOT yet committed.** Working tree:
+  - Modified: `package.json`, `package-lock.json`, `src/app/(app)/upload/page.tsx`, `src/app/globals.css`, `src/lib/businesses/actions.ts`, `src/lib/businesses/types.ts`, `docs/NEXT_HANDOFF.md`.
+  - New (untracked): `src/components/business/business-importer.tsx`, `src/lib/businesses/csv.ts`, `src/lib/businesses/validation.ts`.
+  - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental — exclude from the commit).
+  - No new migration (Block 6 is query/UI only; no schema/storage changes).
+- **Recommended checkpoint (smoke test passed — safe to commit now):** stage the Block 6 project files (NOT `.claude/settings.local.json`):
   ```
-  git add .
-  git commit -m "Block 5: search / filter / sort"
+  git add package.json package-lock.json "src/app/(app)/upload/page.tsx" src/app/globals.css \
+    src/lib/businesses/actions.ts src/lib/businesses/types.ts src/lib/businesses/validation.ts \
+    src/lib/businesses/csv.ts src/components/business/business-importer.tsx docs/NEXT_HANDOFF.md
+  git commit -m "Block 6: CSV import"
   ```
-  (Consider committing `.claude/settings.local.json` separately or leaving it; it is incidental local settings.)
 
 ## 14. Exact next prompt to paste after `/clear`
 
-> First confirm Block 5 is committed (see §13). If not, commit the checkpoint before starting Block 6.
+> First confirm Block 6 is committed (see §13). If not, commit the checkpoint before starting Block 7.
 
 ```
 Resuming the Automotive BI CRM build after a context reset.
@@ -189,13 +223,14 @@ First, read these before doing anything:
 - docs/NEXT_HANDOFF.md
 - docs/CLAUDE_WORKFLOW.md
 
-Then summarize: current project state, the last completed block (Block 5 — Search /
-Filter / Sort), confirm Block 5 is committed, and propose what Block 6 should cover
-(likely data ingestion: spreadsheet/image upload → review/import pipeline). Confirm
-scope with me.
+Then summarize: current project state, the last completed block (Block 6 — CSV Import),
+confirm Block 6 is committed, and propose what Block 7 should cover (candidates:
+duplicate detection using the existing duplicate_score column, restore UI for archived
+records, member invites, or the deferred Google Maps scraper CSV preset). Confirm scope
+with me.
 
 Do NOT write code yet. After summarizing, wait for my confirmation.
-When approved, plan Block 6 only. Follow the block-by-block + 100k smart-zone rules.
+When approved, plan Block 7 only. Follow the block-by-block + 100k smart-zone rules.
 Standing rule for every NEW table: RLS enabled AND minimal table GRANTs (revoke all
 from anon/authenticated, then grant only what's needed). Scope all business data to
 workspace_id and reuse the is_workspace_member() helper in policies. No hard delete
