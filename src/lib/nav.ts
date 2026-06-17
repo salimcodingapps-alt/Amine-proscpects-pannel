@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Database,
   Upload,
+  CopyCheck,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -21,6 +22,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Database", href: "/database", icon: Database },
+  { label: "Duplicates", href: "/duplicates", icon: CopyCheck },
   { label: "Upload", href: "/upload", icon: Upload },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

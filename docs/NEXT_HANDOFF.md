@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work after `/clear`. Read this, `CLAUDE.md`/`AGENTS.md`, and `docs/CLAUDE_WORKFLOW.md` before doing anything.
 
-_Last updated: 2026-06-16 — end of Block 6 (CSV Import), smoke-tested, awaiting checkpoint commit._
+_Last updated: 2026-06-17 — end of Block 7 (Duplicate Detection, read-only), smoke-tested, awaiting checkpoint commit._
 
 ---
 
@@ -10,12 +10,12 @@ _Last updated: 2026-06-16 — end of Block 6 (CSV Import), smoke-tested, awaitin
 
 **Automotive Business Intelligence CRM** — a multi-tenant, AI-native web app to upload messy automotive supplier data (spreadsheets/images), have AI clean + dedupe + brand-tag it, and let teams search/manage it. Built block-by-block per the master spec.
 
-**Status:** Blocks 1–6 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, and now **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`. **Blocks 1–5 are committed (latest `53a0a8f`); Block 6 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
+**Status:** Blocks 1–7 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`, and now **read-only deterministic duplicate detection** at `/duplicates`. **Blocks 1–6 are committed (latest `05461db`); Block 7 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
 
 ## 2. Current block
 
-- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import — pending checkpoint commit).
-- **Next up:** **Block 7 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: duplicate detection (`duplicate_score` column already exists), a restore UI for archived records, member invites, or the **Google Maps scraper CSV preset** (see §6 / §12 deferred work).
+- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only; pending checkpoint commit).
+- **Next up:** **Block 8 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: a **merge UI** building on Block 7's detection (user picks surviving fields — the natural follow-on), a restore UI for archived records, member invites, or the **Google Maps scraper CSV preset** (see §6 / §12 deferred work). NOTE: Block 7 is detection-only — any merge/delete/auto-update work is Block 8+ and needs explicit scope confirmation.
 
 ## 3. What has been implemented so far
 
@@ -80,6 +80,15 @@ _Last updated: 2026-06-16 — end of Block 6 (CSV Import), smoke-tested, awaitin
 - **Raw Google Maps scraper CSVs:** real exports have non-semantic headers (`hfpxzc href`, `qBF1Pd`, …), so auto-mapping can't recognize them — they fall back to all-manual mapping. **DECISION: Block 6 stays a generic CSV importer; no scraper-specific logic.** Interim workflow: the user cleans/normalizes the CSV to semantic headers before importing. A **Google Maps scraper CSV preset** (map known raw column codes by position/pattern) is **deferred to a future block** (see §12).
 - **Validated:** Block 6 smoke test PASSED — happy path + invalid-row handling (bad email, blank company name shown & skipped), a real cleaned **Boumerdes** CSV import of **64 rows**, imported records appear in `/database`, search + wilaya + brand filters work on them, workspace scoping holds, dropdown readability fixed. `tsc --noEmit` + `npm run build` clean. (>500-row cap not manually exercised — deferred; guarded in code.)
 
+**Block 7 — Duplicate Detection, read-only (commit PENDING)**
+- **Detection ONLY** at `/duplicates`: detects likely-duplicate records inside the active workspace, groups them, and explains *why* each group was flagged. **NO merge, NO delete, NO auto-update, NO `duplicate_score` writes, NO AI, NO OCR, NO import logic, NO Google Maps preset. NO new table, NO migration, NO index** (existing columns only; the reserved `duplicate_score` column is left untouched).
+- **Deterministic** — field normalization + union-find connected-component grouping. No fuzzy/edit-distance, no AI. Two records join the same group when they share any normalized signal value.
+- **Signals (5):** `phone`, `email`, `website`, `name_wilaya` (normalized company name **+** wilaya), `name_city` (normalized company name **+** city). **Company name is NEVER used alone** — a name signal only forms when paired with a non-empty wilaya or city. **Address similarity excluded from v1** (Google Maps addresses are noisy → false positives).
+- **Normalizers** (`src/lib/businesses/duplicates.ts`, pure module): `normalizePhone` (digits only; strip `00`/`213`/leading zeros; `<6` digits → ignored; else `0`+digits — so `0550 12 34 56`, `+213 550 12 34 56`, `00213550123456` are equal); `normalizeEmail` (trim+lowercase); `normalizeWebsite` (lowercase, strip scheme/`www.`/trailing slash); `normalizeCompanyName` (lowercase, strip diacritics, drop punctuation, collapse whitespace, remove legal-form noise tokens `sarl/eurl/spa/snc/sas/ets/etablissement(s)/societe/ste`); `normalizeLocality`. Blank/normalized-empty values never form a key (so blank phone/email/website never group together).
+- **Scan cap:** `DEDUP_SCAN_CAP = 2000` active rows per workspace; if hit, the UI shows a clear amber "scanned only the first 2000, may be incomplete" warning. Full-scale detection deferred to a future optimization.
+- **App layer:** `listActiveBusinessesForDedup(supabase, workspaceId, limit=2000)` in `queries.ts` — **read-only** select of existing columns, `deleted_at is null`, ordered `created_at, id`, `.limit(cap)`, returns `{ items, capped }`. `/duplicates/page.tsx` resolves the active workspace (mirrors `/database`), loads rows, runs `findDuplicateGroups(items, { capped })` **in memory**, renders `<DuplicateGroups>`. The component shows scan summary, optional cap warning, a green empty-state when no dupes, and one card per group with **reason badges** (signal label + shared value) and member records, each with an **"Inspect in database →"** link to `/database?q=<company>`. **Deliberately NO action buttons** (no merge/delete/dismiss/edit).
+- **Validated:** Block 7 smoke test PASSED (15/15) against real Supabase — nav + page load, scan count, no cap warning under 2000, group cards, phone detection across formats, case-insensitive email, normalized website, name+wilaya/city, **name-only control did NOT group** (no false positives), **blank-contact controls did NOT group**, multi-signal badges, Inspect links filter `/database`, workspace isolation, and detection is read-only (records unchanged). `tsc --noEmit` + `npm run build` clean.
+
 ## 4. Files created
 
 **Block 4:**
@@ -98,6 +107,11 @@ _Last updated: 2026-06-16 — end of Block 6 (CSV Import), smoke-tested, awaitin
 - `src/lib/businesses/csv.ts` (papaparse wrapper → `{ headers, rows }`; trims, skips blanks, enforces ≤500 cap)
 - `src/components/business/business-importer.tsx` (client 4-step import UI)
 
+**Block 7:**
+- `src/lib/businesses/duplicates.ts` (PURE detection module — normalizers, `recordKeys`, `UnionFind`, `findDuplicateGroups`; signal types/labels/order; `DEDUP_SCAN_CAP`. No `"use server"`/Supabase/Next.)
+- `src/app/(app)/duplicates/page.tsx` (server component — resolves active workspace, loads rows read-only, runs detection in memory)
+- `src/components/business/duplicate-groups.tsx` (server presentational — group cards, reason badges, Inspect links; no actions)
+
 (See git history for Block 1–3 file lists; Block 3 files listed in prior handoff revisions.)
 
 ## 5. Files modified
@@ -115,6 +129,10 @@ _Last updated: 2026-06-16 — end of Block 6 (CSV Import), smoke-tested, awaitin
 - `src/app/(app)/upload/page.tsx` (replaced the placeholder; resolves active workspace, renders `<BusinessImporter>`).
 - `src/app/globals.css` (dark-mode native `<select>`/`<option>` readability fix).
 - `package.json` / `package-lock.json` (papaparse + `@types/papaparse`).
+
+**Block 7:**
+- `src/lib/businesses/queries.ts` (added **read-only** `listActiveBusinessesForDedup`; imports `DEDUP_SCAN_CAP`. No change to `listBusinesses`).
+- `src/lib/nav.ts` (added **Duplicates** nav item + `CopyCheck` icon, between Database and Upload).
 - `docs/NEXT_HANDOFF.md` (this file).
 
 ## 6. Important decisions made
@@ -139,6 +157,13 @@ _Last updated: 2026-06-16 — end of Block 6 (CSV Import), smoke-tested, awaitin
   - **Validation is shared via a pure module** (`validation.ts`) precisely because `actions.ts` is `"use server"` and may only export async functions — a sync helper had to live elsewhere to be usable client-side. Keep `validation.ts` pure.
   - **Generic importer only** — NO Google Maps scraper logic. Raw scraper headers are non-semantic, so the user cleans/normalizes CSVs to semantic headers first. A scraper preset is deferred (see §12).
   - **Dark-mode select fix** is global (`color-scheme: dark` + `option` colors in `globals.css`); no shadcn select component added.
+- **Block 7 specifics:**
+  - **Detection-only, read-only.** This block detects + explains duplicates; it does NOT merge, delete, auto-update, or write `duplicate_score`. Any of those is Block 8+ and needs explicit scope confirmation. No new table / migration / index — existing columns only.
+  - **Deterministic, not AI/fuzzy.** Normalize fields, then union-find connected components: records sharing any normalized signal value land in one group. No edit-distance/fuzzy matching (avoids unexplainable false positives; keeps every group justifiable via its reason badges).
+  - **Signals = phone, email, website, name+wilaya, name+city.** **Company name is never a signal on its own** — too many legitimate distinct businesses share a name within Algeria; a name only matches when paired with wilaya or city. **Address similarity is excluded from v1** because scraped Google Maps addresses are noisy and would create false positives.
+  - **Blank values never group.** A normalized-empty field produces no key, so records with blank phone/email/website are not joined on "shared blank."
+  - **2000-row scan cap per workspace** (`DEDUP_SCAN_CAP`), with a visible warning when hit. Keeps the in-memory O(n) bucketing fast and bounded; full-scale detection is a deferred optimization (would likely need DB-side support — STOP and ask before adding any index/migration for it).
+  - **Detection module is pure** (`duplicates.ts`, no `"use server"`/Supabase/Next) so the same logic could later run client- or server-side; the page does the Supabase read and runs detection in memory.
 
 ## 7. Standing rules for every NEW table (carry forward)
 
@@ -176,17 +201,19 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 11. Build / typecheck / test results
 
-- `npx tsc --noEmit` → **clean** (exit 0) after Block 6 + dropdown fix.
-- `npm run build` → **clean**; 11 routes. `/database` and `/upload` dynamic (both resolve auth/workspace at request time); auth pages static.
+- `npx tsc --noEmit` → **clean** (exit 0) after Block 7.
+- `npm run build` → **clean**. `/database`, `/upload`, and `/duplicates` dynamic (each resolves auth/workspace at request time); auth pages static.
 - **Block 4 smoke test (user-confirmed, real Supabase):** all 8 checks PASS.
 - **Block 5 smoke test (user-confirmed, real Supabase + dev seed):** PASS — search/filter/sort/pagination/URL state/workspace isolation/CRUD; brand filter case-insensitive.
 - **Block 6 smoke test (user-confirmed, real Supabase):** PASS — upload + in-browser parse, header detection, column mapping (clean semantic headers), review/validation counts, confirmed import, **real cleaned Boumerdes CSV of 64 rows** imported, records appear in `/database`, search + wilaya + brand filters work on imported records, workspace scoping holds, invalid-row handling (bad email + blank company name skipped & shown), dark-mode dropdown readability fixed. (>500-row cap not manually exercised — guarded in code.)
+- **Block 7 smoke test (user-confirmed, real Supabase):** PASS (15/15) — Duplicates nav + page load, read-only header/description, scanned-count, no cap warning under 2000, group cards, same-phone across formats, case-insensitive email, normalized website, name+wilaya/city, **name-only control not grouped** (no false positive), **blank-contact controls not grouped**, multi-signal reason badges, Inspect-in-database links filter `/database`, workspace isolation, detection read-only (no record changes).
 
 ## 12. Known bugs or unfinished items
 
 - No known bugs. Limitations by design (deferred):
   - **CSV import is generic only** — raw Google Maps scraper CSVs (non-semantic headers like `hfpxzc href`, `qBF1Pd`) require the user to clean/normalize to semantic headers first. **DEFERRED FUTURE BLOCK: a "Google Maps scraper CSV" preset** that maps known raw column codes by position/pattern (one-click "apply preset" on the mapping step). Not started.
-  - **No XLSX import** (CSV only). No AI cleaning, no OCR, no duplicate detection, no merge UI, no map view. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused.) **No import dedupe** — re-importing the same file creates duplicates (by design for now).
+  - **Duplicate detection is read-only and detection-only** (Block 7) — it flags + explains likely duplicates at `/duplicates` but offers **no merge / delete / dismiss / auto-update**, and does not write `duplicate_score`. A **merge UI** is the natural Block 8 follow-on (deferred — needs scope confirmation). Detection is also **capped at 2000 active rows/workspace** (full-scale scan deferred) and **excludes address similarity** from v1.
+  - **No XLSX import** (CSV only). No AI cleaning, no OCR, no merge UI, no map view. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused — `duplicate_score` is intentionally NOT written by Block 7.) **No import dedupe** — re-importing the same file creates duplicates (by design for now; detection at `/duplicates` surfaces them after the fact).
   - **No restore UI** for archived records (soft-delete works; un-archive deferred). `listBusinesses` always hides `deleted_at` rows (the `includeDeleted` option was removed in Block 5 — re-add when building restore).
   - **Brand filter is canonical-match only** — unknown/odd-cased brands stored *before* Block 5 won't retroactively match a different-cased filter; new/edited records, imports, and the dev seed are canonical.
   - **Invites still deferred** — members are only auto-provisioned on signup; most workspaces have one member.
@@ -196,24 +223,25 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 13. Git status summary
 
-- Branch: **main**. Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5).
-- **Blocks 1–5 committed** (latest `53a0a8f`).
-- **Block 6 (CSV Import) — implemented + smoke-tested, NOT yet committed.** Working tree:
-  - Modified: `package.json`, `package-lock.json`, `src/app/(app)/upload/page.tsx`, `src/app/globals.css`, `src/lib/businesses/actions.ts`, `src/lib/businesses/types.ts`, `docs/NEXT_HANDOFF.md`.
-  - New (untracked): `src/components/business/business-importer.tsx`, `src/lib/businesses/csv.ts`, `src/lib/businesses/validation.ts`.
+- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6).
+- **Blocks 1–6 committed and pushed** (latest `05461db`).
+- **Block 7 (Duplicate Detection, read-only) — implemented + smoke-tested, NOT yet committed.** Working tree:
+  - Modified: `src/lib/businesses/queries.ts`, `src/lib/nav.ts`, `docs/NEXT_HANDOFF.md`.
+  - New (untracked): `src/lib/businesses/duplicates.ts`, `src/app/(app)/duplicates/` (the `page.tsx`), `src/components/business/duplicate-groups.tsx`.
   - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental — exclude from the commit).
-  - No new migration (Block 6 is query/UI only; no schema/storage changes).
-- **Recommended checkpoint (smoke test passed — safe to commit now):** stage the Block 6 project files (NOT `.claude/settings.local.json`):
+  - No new migration / no schema / no index (Block 7 is read-only query + UI only).
+- **Recommended checkpoint (smoke test passed — safe to commit now):** stage the Block 7 project files (NOT `.claude/settings.local.json`):
   ```
-  git add package.json package-lock.json "src/app/(app)/upload/page.tsx" src/app/globals.css \
-    src/lib/businesses/actions.ts src/lib/businesses/types.ts src/lib/businesses/validation.ts \
-    src/lib/businesses/csv.ts src/components/business/business-importer.tsx docs/NEXT_HANDOFF.md
-  git commit -m "Block 6: CSV import"
+  git add src/lib/businesses/duplicates.ts src/lib/businesses/queries.ts src/lib/nav.ts \
+    "src/app/(app)/duplicates/page.tsx" src/components/business/duplicate-groups.tsx \
+    docs/NEXT_HANDOFF.md
+  git commit -m "Block 7: duplicate detection"
   ```
+  Then push: `git push origin main`.
 
 ## 14. Exact next prompt to paste after `/clear`
 
-> First confirm Block 6 is committed (see §13). If not, commit the checkpoint before starting Block 7.
+> First confirm Block 7 is committed (see §13). If not, commit + push the checkpoint before starting Block 8.
 
 ```
 Resuming the Automotive BI CRM build after a context reset.
@@ -223,16 +251,18 @@ First, read these before doing anything:
 - docs/NEXT_HANDOFF.md
 - docs/CLAUDE_WORKFLOW.md
 
-Then summarize: current project state, the last completed block (Block 6 — CSV Import),
-confirm Block 6 is committed, and propose what Block 7 should cover (candidates:
-duplicate detection using the existing duplicate_score column, restore UI for archived
-records, member invites, or the deferred Google Maps scraper CSV preset). Confirm scope
-with me.
+Then summarize: current project state, the last completed block (Block 7 — Duplicate
+Detection, read-only), confirm Block 7 is committed + pushed, and propose what Block 8
+should cover (candidates: a MERGE UI building on Block 7's detection — user picks the
+surviving fields, the natural follow-on; restore UI for archived records; member
+invites; or the deferred Google Maps scraper CSV preset). Confirm scope with me.
 
 Do NOT write code yet. After summarizing, wait for my confirmation.
-When approved, plan Block 7 only. Follow the block-by-block + 100k smart-zone rules.
+When approved, plan Block 8 only. Follow the block-by-block + 100k smart-zone rules.
 Standing rule for every NEW table: RLS enabled AND minimal table GRANTs (revoke all
 from anon/authenticated, then grant only what's needed). Scope all business data to
 workspace_id and reuse the is_workspace_member() helper in policies. No hard delete
 unless explicitly approved. If an index/migration seems needed, stop and ask first.
+A merge UI in particular means WRITES/soft-deletes — get explicit approval on exactly
+what it may modify before coding.
 ```
