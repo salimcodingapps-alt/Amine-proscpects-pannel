@@ -41,7 +41,9 @@ export default async function DuplicatesPage() {
       active.id
     );
     const report = findDuplicateGroups(items, { capped });
-    content = <DuplicateGroups key={active.id} report={report} />;
+    content = (
+      <DuplicateGroups key={active.id} report={report} workspaceId={active.id} />
+    );
   } else {
     content = <Placeholder block="No workspace found for your account." />;
   }

@@ -166,3 +166,56 @@ export interface BusinessImportResult {
   /** Set only on a whole-request failure (auth, bad workspace, over cap, DB). */
   error?: string;
 }
+
+/** ----------------------------------------------------------------------------
+ * Block 8 — Manual duplicate merge
+ * --------------------------------------------------------------------------- */
+
+/**
+ * Fields a merge can carry across from a chosen source record. These are exactly
+ * the writable BusinessInput fields; each one's value is taken from ONE record in
+ * the merge set (chosen by the user, defaulting to the survivor). No free-text
+ * editing — only existing values from the involved records are ever written.
+ */
+export const MERGEABLE_FIELDS: { key: keyof BusinessInput; label: string }[] = [
+  { key: "companyName", label: "Company name" },
+  { key: "contactName", label: "Contact name" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+  { key: "website", label: "Website" },
+  { key: "address", label: "Address" },
+  { key: "city", label: "City" },
+  { key: "wilaya", label: "Wilaya" },
+  { key: "country", label: "Country" },
+  { key: "businessType", label: "Business type" },
+  { key: "supportedBrands", label: "Supported brands" },
+  { key: "notes", label: "Notes" },
+  { key: "status", label: "Status" },
+];
+
+/**
+ * Per-field choice of WHICH record supplies that field's value. The value is a
+ * record id that MUST belong to the merge set; absent fields default to the
+ * survivor. The server never trusts field VALUES from the client — only these
+ * source ids — and reads the actual value from the refetched DB record.
+ */
+export type MergeFieldSources = Partial<Record<keyof BusinessInput, string>>;
+
+/** Input to the mergeBusinesses server action. Ids only — never field values. */
+export interface MergeInput {
+  survivorId: string;
+  loserIds: string[];
+  fieldSources: MergeFieldSources;
+}
+
+/** Outcome of mergeBusinesses. */
+export interface MergeResult {
+  /** True once the surviving record's UPDATE succeeded. */
+  survivorUpdated: boolean;
+  /** Loser ids that were successfully soft-archived. */
+  archivedIds: string[];
+  /** Loser ids whose archive UPDATE failed (survivor already merged; re-runnable). */
+  failedIds: string[];
+  /** Set on a whole-request failure or a clean abort before any write. */
+  error?: string;
+}

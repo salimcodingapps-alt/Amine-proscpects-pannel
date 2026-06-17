@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
+import { MergeSheet } from "@/components/business/merge-sheet";
 import {
   SIGNAL_LABELS,
   type DuplicateGroup,
@@ -14,7 +15,13 @@ import {
  * the database list. There are deliberately NO actions here — no merge, no
  * delete, no dismiss — this block only detects and explains.
  */
-export function DuplicateGroups({ report }: { report: DuplicateReport }) {
+export function DuplicateGroups({
+  report,
+  workspaceId,
+}: {
+  report: DuplicateReport;
+  workspaceId: string;
+}) {
   const { groups, scannedCount, capped } = report;
   const recordsInvolved = groups.reduce((sum, g) => sum + g.members.length, 0);
 
@@ -57,7 +64,11 @@ export function DuplicateGroups({ report }: { report: DuplicateReport }) {
       ) : (
         <div className="flex flex-col gap-4">
           {groups.map((group) => (
-            <DuplicateGroupCard key={group.id} group={group} />
+            <DuplicateGroupCard
+              key={group.id}
+              group={group}
+              workspaceId={workspaceId}
+            />
           ))}
         </div>
       )}
@@ -66,23 +77,32 @@ export function DuplicateGroups({ report }: { report: DuplicateReport }) {
 }
 
 /** One duplicate group: the reasons it was flagged + its member records. */
-function DuplicateGroupCard({ group }: { group: DuplicateGroup }) {
+function DuplicateGroupCard({
+  group,
+  workspaceId,
+}: {
+  group: DuplicateGroup;
+  workspaceId: string;
+}) {
   return (
     <Card className="flex flex-col gap-4 p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium text-foreground">
-          {group.members.length} possible duplicates
-        </span>
-        {group.matches.map((m) => (
-          <span
-            key={`${m.signal}:${m.value}`}
-            className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary"
-            title={m.value}
-          >
-            {SIGNAL_LABELS[m.signal]}
-            <span className="max-w-[16rem] truncate text-primary/70">· {m.value}</span>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-foreground">
+            {group.members.length} possible duplicates
           </span>
-        ))}
+          {group.matches.map((m) => (
+            <span
+              key={`${m.signal}:${m.value}`}
+              className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs text-primary"
+              title={m.value}
+            >
+              {SIGNAL_LABELS[m.signal]}
+              <span className="max-w-[16rem] truncate text-primary/70">· {m.value}</span>
+            </span>
+          ))}
+        </div>
+        <MergeSheet group={group} workspaceId={workspaceId} />
       </div>
 
       <div className="flex flex-col divide-y divide-border">

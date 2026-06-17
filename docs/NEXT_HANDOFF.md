@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work after `/clear`. Read this, `CLAUDE.md`/`AGENTS.md`, and `docs/CLAUDE_WORKFLOW.md` before doing anything.
 
-_Last updated: 2026-06-17 — end of Block 7 (Duplicate Detection, read-only), smoke-tested, awaiting checkpoint commit._
+_Last updated: 2026-06-18 — end of Block 8 (Safe Manual Duplicate Merge UI), smoke-tested (12/12 PASS), awaiting checkpoint commit._
 
 ---
 
@@ -10,12 +10,12 @@ _Last updated: 2026-06-17 — end of Block 7 (Duplicate Detection, read-only), s
 
 **Automotive Business Intelligence CRM** — a multi-tenant, AI-native web app to upload messy automotive supplier data (spreadsheets/images), have AI clean + dedupe + brand-tag it, and let teams search/manage it. Built block-by-block per the master spec.
 
-**Status:** Blocks 1–7 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`, and now **read-only deterministic duplicate detection** at `/duplicates`. **Blocks 1–6 are committed (latest `05461db`); Block 7 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
+**Status:** Blocks 1–8 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`, **read-only deterministic duplicate detection** at `/duplicates`, and now a **safe manual duplicate merge UI** (pick survivor → choose field sources → preview → confirm → update survivor + soft-archive losers) on those same `/duplicates` groups. **Blocks 1–7 are committed (latest `3bb6e0e`); Block 8 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
 
 ## 2. Current block
 
-- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only; pending checkpoint commit).
-- **Next up:** **Block 8 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: a **merge UI** building on Block 7's detection (user picks surviving fields — the natural follow-on), a restore UI for archived records, member invites, or the **Google Maps scraper CSV preset** (see §6 / §12 deferred work). NOTE: Block 7 is detection-only — any merge/delete/auto-update work is Block 8+ and needs explicit scope confirmation.
+- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only), Block 8 (Safe Manual Duplicate Merge UI — pending checkpoint commit).
+- **Next up:** **Block 9 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: a **Restore / archive-history UI** (un-archive soft-deleted records — now more valuable since Block 8 archives merge losers; would re-add the `includeDeleted` option removed in Block 5), **member invites**, the deferred **Google Maps scraper CSV preset**, or AI-assisted cleaning/dedupe. NOTE: Block 8 covers merge only (manual, one group at a time); there is still NO restore/undo/history — recovery from a bad merge is via the SQL Editor (clear `deleted_at`).
 
 ## 3. What has been implemented so far
 
@@ -89,6 +89,14 @@ _Last updated: 2026-06-17 — end of Block 7 (Duplicate Detection, read-only), s
 - **App layer:** `listActiveBusinessesForDedup(supabase, workspaceId, limit=2000)` in `queries.ts` — **read-only** select of existing columns, `deleted_at is null`, ordered `created_at, id`, `.limit(cap)`, returns `{ items, capped }`. `/duplicates/page.tsx` resolves the active workspace (mirrors `/database`), loads rows, runs `findDuplicateGroups(items, { capped })` **in memory**, renders `<DuplicateGroups>`. The component shows scan summary, optional cap warning, a green empty-state when no dupes, and one card per group with **reason badges** (signal label + shared value) and member records, each with an **"Inspect in database →"** link to `/database?q=<company>`. **Deliberately NO action buttons** (no merge/delete/dismiss/edit).
 - **Validated:** Block 7 smoke test PASSED (15/15) against real Supabase — nav + page load, scan count, no cap warning under 2000, group cards, phone detection across formats, case-insensitive email, normalized website, name+wilaya/city, **name-only control did NOT group** (no false positives), **blank-contact controls did NOT group**, multi-signal badges, Inspect links filter `/database`, workspace isolation, and detection is read-only (records unchanged). `tsc --noEmit` + `npm run build` clean.
 
+**Block 8 — Safe Manual Duplicate Merge UI (commit PENDING)**
+- **Manual, write-careful merge** of ONE detected duplicate group at a time, launched from the `/duplicates` group cards. Flow: pick the **surviving record** (default = oldest) → for each **field where records differ**, pick **which record supplies the value** → see a full **merged preview** + an explicit **archive notice** → **Confirm merge**. On confirm: the survivor is UPDATEd; the other members are **soft-archived** (`deleted_at`). **NO hard delete, NO bulk, NO AI, NO auto-merge, NO `duplicate_score` write, NO new table / migration / RPC / index.**
+- **Server never trusts client field values.** The client sends only `survivorId`, `loserIds`, and `fieldSources` (a map of *field → source record id*). The server action `mergeBusinesses` (in `actions.ts`): validates id shapes (one survivor, ≥1 loser, all distinct, survivor ∉ losers, every field-source id ∈ the merge set) → **re-fetches** all involved records from the DB (active + workspace-scoped, via new read-only `getActiveBusinessesByIds`) → verifies it got **exactly** the requested active set → **composes the survivor's new values from the refetched DB rows only** → re-validates with the shared `buildValues` → writes.
+- **Survivor-first ordering for safe partial failure.** The survivor UPDATE runs first with `.select("id")` to confirm a row was hit; only then are losers soft-archived one-by-one (each also `.select("id")`-confirmed). If the survivor update fails, **zero** losers are archived (clean abort). If a loser archive fails mid-way, the survivor is already merged and the un-archived duplicates stay active and re-mergeable — `MergeResult` reports `{ survivorUpdated, archivedIds, failedIds, error? }`, and the UI surfaces partial outcomes. Nothing is ever unrecoverable (losers are soft-deleted).
+- **Decisions (locked with the user):** (1) **No "Undo this merge" in Block 8** — without a proper restore/history mechanism, an undo would reactivate losers but could NOT restore overwritten survivor fields, which would mislead. Recovery interim = SQL Editor (clear `deleted_at`). A real Restore UI / merge history is a future block. (2) **Accept survivor-first sequential writes; no RPC/migration for atomicity** — all changes are recoverable (soft-archive), so true transactionality isn't worth a migration here. (3) **No free-text editing inside merge** — only existing values from the group's records may be chosen.
+- **App layer:** `mergeBusinesses(workspaceId, { survivorId, loserIds, fieldSources })` + read-only `getActiveBusinessesByIds(supabase, workspaceId, ids)`. UI: `merge-sheet.tsx` (client, Sheet-based; survivor radios, per-field source `<select>`s shown only for conflicting fields, full preview table, archive notice, Confirm) — uses `useTransition`, inline error bar, `router.refresh()` on success (re-runs detection). `merge-sheet` owns its own trigger button and open state, rendered per group inside `duplicate-groups.tsx`; the planned separate `merge-launcher.tsx` was **not needed** (folded into `merge-sheet`). No new shadcn component (reused the existing `sheet`); no new dependency.
+- **Validated:** Block 8 smoke test PASSED (12/12) against real Supabase — Merge button on groups, sheet opens, survivor/default selection, field-source selection, preview matches sources, **Cancel writes nothing**, **Confirm updates only the survivor**, losers **soft-archived** and gone from active `/database`, group disappears/shrinks on refresh, **SQL check confirms loser rows still exist with `deleted_at` set**, workspace isolation holds, and no hard delete / no AI / no bulk / no `duplicate_score` write. `tsc --noEmit` + `npm run build` clean (`/duplicates` stays dynamic `ƒ`).
+
 ## 4. Files created
 
 **Block 4:**
@@ -112,6 +120,9 @@ _Last updated: 2026-06-17 — end of Block 7 (Duplicate Detection, read-only), s
 - `src/app/(app)/duplicates/page.tsx` (server component — resolves active workspace, loads rows read-only, runs detection in memory)
 - `src/components/business/duplicate-groups.tsx` (server presentational — group cards, reason badges, Inspect links; no actions)
 
+**Block 8:**
+- `src/components/business/merge-sheet.tsx` (client — Sheet-based merge UI: survivor radios, per-field source pickers for conflicting fields, merged preview, archive notice, Confirm; `useTransition` + inline error bar + `router.refresh()`. Owns its own trigger button/open state — the planned `merge-launcher.tsx` was folded in here.)
+
 (See git history for Block 1–3 file lists; Block 3 files listed in prior handoff revisions.)
 
 ## 5. Files modified
@@ -133,6 +144,14 @@ _Last updated: 2026-06-17 — end of Block 7 (Duplicate Detection, read-only), s
 **Block 7:**
 - `src/lib/businesses/queries.ts` (added **read-only** `listActiveBusinessesForDedup`; imports `DEDUP_SCAN_CAP`. No change to `listBusinesses`).
 - `src/lib/nav.ts` (added **Duplicates** nav item + `CopyCheck` icon, between Database and Upload).
+- `docs/NEXT_HANDOFF.md` (this file).
+
+**Block 8:**
+- `src/lib/businesses/types.ts` (added merge types: `MERGEABLE_FIELDS`, `MergeFieldSources`, `MergeInput`, `MergeResult`).
+- `src/lib/businesses/queries.ts` (added **read-only** `getActiveBusinessesByIds` — fetch specific active records by id for the merge action to re-load from the DB; reuses `BUSINESS_COLUMNS`/`mapRow`. No change to existing queries).
+- `src/lib/businesses/actions.ts` (added `mergeBusinesses`; imports `getActiveBusinessesByIds` + merge types. Existing create/update/archive/import untouched).
+- `src/components/business/duplicate-groups.tsx` (threaded a new `workspaceId` prop through; renders `<MergeSheet>` per group card — still otherwise read-only presentation).
+- `src/app/(app)/duplicates/page.tsx` (passes `active.id` into `<DuplicateGroups>`).
 - `docs/NEXT_HANDOFF.md` (this file).
 
 ## 6. Important decisions made
@@ -164,6 +183,12 @@ _Last updated: 2026-06-17 — end of Block 7 (Duplicate Detection, read-only), s
   - **Blank values never group.** A normalized-empty field produces no key, so records with blank phone/email/website are not joined on "shared blank."
   - **2000-row scan cap per workspace** (`DEDUP_SCAN_CAP`), with a visible warning when hit. Keeps the in-memory O(n) bucketing fast and bounded; full-scale detection is a deferred optimization (would likely need DB-side support — STOP and ask before adding any index/migration for it).
   - **Detection module is pure** (`duplicates.ts`, no `"use server"`/Supabase/Next) so the same logic could later run client- or server-side; the page does the Supabase read and runs detection in memory.
+- **Block 8 specifics:**
+  - **Manual, one-group-at-a-time merge; write-careful.** No auto-merge, no bulk, no AI. Reuses the existing UPDATE paths and RLS — **no new table / migration / RPC / index**, and **no `duplicate_score` write**. Soft-archive (`deleted_at`) is the only "deletion."
+  - **Server does not trust client field values.** The client sends only ids (`survivorId`, `loserIds`) + `fieldSources` (field → source record id). The action re-fetches every involved record from the DB, verifies the exact set is active + in-workspace, and **composes the survivor from DB row values only**, then re-validates via `buildValues`. A field-source id outside the merge set, or any record that has since been archived/moved, aborts cleanly before any write.
+  - **Survivor-first sequential writes** (no transaction/RPC by design). Survivor UPDATE first (`.select("id")` confirms a hit); only then archive losers. Partial failure is always recoverable and re-runnable — losers are soft-deleted, never destroyed. `MergeResult` carries `{ survivorUpdated, archivedIds, failedIds, error? }`.
+  - **No Undo / no restore UI in Block 8** (locked). A partial undo would mislead (can't restore overwritten survivor fields without history). Interim recovery from a bad merge = SQL Editor (clear `deleted_at` on the archived losers; the survivor's pre-merge values still live in those archived rows). A proper Restore UI / merge history is a clean future block.
+  - **UI reuses the existing `sheet` primitive** (no new shadcn component, no new dependency); native `<select>`/`<table>`, inline error bar, `useTransition`, `router.refresh()` — same conventions as `business-manager`/`business-importer`.
 
 ## 7. Standing rules for every NEW table (carry forward)
 
@@ -201,18 +226,20 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 11. Build / typecheck / test results
 
-- `npx tsc --noEmit` → **clean** (exit 0) after Block 7.
+- `npx tsc --noEmit` → **clean** (exit 0) after Block 8.
 - `npm run build` → **clean**. `/database`, `/upload`, and `/duplicates` dynamic (each resolves auth/workspace at request time); auth pages static.
 - **Block 4 smoke test (user-confirmed, real Supabase):** all 8 checks PASS.
 - **Block 5 smoke test (user-confirmed, real Supabase + dev seed):** PASS — search/filter/sort/pagination/URL state/workspace isolation/CRUD; brand filter case-insensitive.
 - **Block 6 smoke test (user-confirmed, real Supabase):** PASS — upload + in-browser parse, header detection, column mapping (clean semantic headers), review/validation counts, confirmed import, **real cleaned Boumerdes CSV of 64 rows** imported, records appear in `/database`, search + wilaya + brand filters work on imported records, workspace scoping holds, invalid-row handling (bad email + blank company name skipped & shown), dark-mode dropdown readability fixed. (>500-row cap not manually exercised — guarded in code.)
 - **Block 7 smoke test (user-confirmed, real Supabase):** PASS (15/15) — Duplicates nav + page load, read-only header/description, scanned-count, no cap warning under 2000, group cards, same-phone across formats, case-insensitive email, normalized website, name+wilaya/city, **name-only control not grouped** (no false positive), **blank-contact controls not grouped**, multi-signal reason badges, Inspect-in-database links filter `/database`, workspace isolation, detection read-only (no record changes).
+- **Block 8 smoke test (user-confirmed, real Supabase):** PASS (12/12) — Merge button on groups, sheet opens, survivor/default selection, field-source selection, **preview matches selected sources**, **Cancel writes nothing**, **Confirm updates only the chosen survivor**, losers soft-archived + gone from active `/database`, duplicate group disappears/shrinks on refresh, **SQL check: loser rows still exist with `deleted_at` set**, workspace isolation holds, and no hard delete / no AI / no bulk / no `duplicate_score` write.
 
 ## 12. Known bugs or unfinished items
 
 - No known bugs. Limitations by design (deferred):
   - **CSV import is generic only** — raw Google Maps scraper CSVs (non-semantic headers like `hfpxzc href`, `qBF1Pd`) require the user to clean/normalize to semantic headers first. **DEFERRED FUTURE BLOCK: a "Google Maps scraper CSV" preset** that maps known raw column codes by position/pattern (one-click "apply preset" on the mapping step). Not started.
-  - **Duplicate detection is read-only and detection-only** (Block 7) — it flags + explains likely duplicates at `/duplicates` but offers **no merge / delete / dismiss / auto-update**, and does not write `duplicate_score`. A **merge UI** is the natural Block 8 follow-on (deferred — needs scope confirmation). Detection is also **capped at 2000 active rows/workspace** (full-scale scan deferred) and **excludes address similarity** from v1.
+  - **Duplicate detection (Block 7)** is still read-only deterministic detection; it does **not** write `duplicate_score`. Detection is **capped at 2000 active rows/workspace** (full-scale scan deferred) and **excludes address similarity** from v1.
+  - **Duplicate merge (Block 8)** now exists on the `/duplicates` groups: **manual, one group at a time** — pick survivor, choose field sources, preview, confirm → survivor UPDATEd + losers soft-archived. By design it has **no auto-merge, no bulk merge, no AI, no `duplicate_score` write, and no Undo/restore/history**. Recovery from a regretted merge is currently **manual via the SQL Editor** (clear `deleted_at` on the archived losers). A **Restore / archive-history UI** is the natural next deferred block (would also re-add the `includeDeleted` option removed in Block 5).
   - **No XLSX import** (CSV only). No AI cleaning, no OCR, no merge UI, no map view. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused — `duplicate_score` is intentionally NOT written by Block 7.) **No import dedupe** — re-importing the same file creates duplicates (by design for now; detection at `/duplicates` surfaces them after the fact).
   - **No restore UI** for archived records (soft-delete works; un-archive deferred). `listBusinesses` always hides `deleted_at` rows (the `includeDeleted` option was removed in Block 5 — re-add when building restore).
   - **Brand filter is canonical-match only** — unknown/odd-cased brands stored *before* Block 5 won't retroactively match a different-cased filter; new/edited records, imports, and the dev seed are canonical.
@@ -223,25 +250,26 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 13. Git status summary
 
-- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6).
-- **Blocks 1–6 committed and pushed** (latest `05461db`).
-- **Block 7 (Duplicate Detection, read-only) — implemented + smoke-tested, NOT yet committed.** Working tree:
-  - Modified: `src/lib/businesses/queries.ts`, `src/lib/nav.ts`, `docs/NEXT_HANDOFF.md`.
-  - New (untracked): `src/lib/businesses/duplicates.ts`, `src/app/(app)/duplicates/` (the `page.tsx`), `src/components/business/duplicate-groups.tsx`.
+- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6), `3bb6e0e` (Block 7).
+- **Blocks 1–7 committed and pushed** (latest `3bb6e0e`).
+- **Block 8 (Safe Manual Duplicate Merge UI) — implemented + smoke-tested (12/12), NOT yet committed.** Working tree:
+  - Modified: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/duplicate-groups.tsx`, `src/app/(app)/duplicates/page.tsx`, `docs/NEXT_HANDOFF.md`.
+  - New (untracked): `src/components/business/merge-sheet.tsx`.
   - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental — exclude from the commit).
-  - No new migration / no schema / no index (Block 7 is read-only query + UI only).
-- **Recommended checkpoint (smoke test passed — safe to commit now):** stage the Block 7 project files (NOT `.claude/settings.local.json`):
+  - No new migration / no schema / no index / no RPC (Block 8 reuses existing UPDATE paths + RLS).
+- **Recommended checkpoint (smoke test passed — safe to commit now):** stage the Block 8 project files (NOT `.claude/settings.local.json`):
   ```
-  git add src/lib/businesses/duplicates.ts src/lib/businesses/queries.ts src/lib/nav.ts \
-    "src/app/(app)/duplicates/page.tsx" src/components/business/duplicate-groups.tsx \
+  git add src/lib/businesses/types.ts src/lib/businesses/queries.ts \
+    src/lib/businesses/actions.ts src/components/business/merge-sheet.tsx \
+    src/components/business/duplicate-groups.tsx "src/app/(app)/duplicates/page.tsx" \
     docs/NEXT_HANDOFF.md
-  git commit -m "Block 7: duplicate detection"
+  git commit -m "Block 8: safe manual duplicate merge UI"
   ```
   Then push: `git push origin main`.
 
 ## 14. Exact next prompt to paste after `/clear`
 
-> First confirm Block 7 is committed (see §13). If not, commit + push the checkpoint before starting Block 8.
+> First confirm Block 8 is committed (see §13). If not, commit + push the checkpoint before starting Block 9.
 
 ```
 Resuming the Automotive BI CRM build after a context reset.
@@ -251,18 +279,19 @@ First, read these before doing anything:
 - docs/NEXT_HANDOFF.md
 - docs/CLAUDE_WORKFLOW.md
 
-Then summarize: current project state, the last completed block (Block 7 — Duplicate
-Detection, read-only), confirm Block 7 is committed + pushed, and propose what Block 8
-should cover (candidates: a MERGE UI building on Block 7's detection — user picks the
-surviving fields, the natural follow-on; restore UI for archived records; member
-invites; or the deferred Google Maps scraper CSV preset). Confirm scope with me.
+Then summarize: current project state, the last completed block (Block 8 — Safe Manual
+Duplicate Merge UI), confirm Block 8 is committed + pushed, and propose what Block 9
+should cover (candidates: a RESTORE / archive-history UI — un-archive soft-deleted
+records, now more valuable since Block 8 archives merge losers, and would re-add the
+includeDeleted option removed in Block 5; member invites; the deferred Google Maps
+scraper CSV preset; or AI-assisted cleaning/dedupe). Confirm scope with me.
 
 Do NOT write code yet. After summarizing, wait for my confirmation.
-When approved, plan Block 8 only. Follow the block-by-block + 100k smart-zone rules.
+When approved, plan Block 9 only. Follow the block-by-block + 100k smart-zone rules.
 Standing rule for every NEW table: RLS enabled AND minimal table GRANTs (revoke all
 from anon/authenticated, then grant only what's needed). Scope all business data to
 workspace_id and reuse the is_workspace_member() helper in policies. No hard delete
-unless explicitly approved. If an index/migration seems needed, stop and ask first.
-A merge UI in particular means WRITES/soft-deletes — get explicit approval on exactly
-what it may modify before coding.
+unless explicitly approved. If an index/migration/RPC seems needed, stop and ask first.
+Any write/restore feature: get explicit approval on exactly what it may modify before
+coding, and prefer recoverable (soft) operations.
 ```
