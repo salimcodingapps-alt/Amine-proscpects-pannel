@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work after `/clear`. Read this, `CLAUDE.md`/`AGENTS.md`, and `docs/CLAUDE_WORKFLOW.md` before doing anything.
 
-_Last updated: 2026-06-18 — end of Block 9 (Restore / Archive UI), smoke-tested PASS, awaiting checkpoint commit. (Block 8 is now committed + pushed as `be07fbd`.)_
+_Last updated: 2026-06-18 — Blocks 1–9 complete, smoke-tested, committed, and pushed. Latest commit `d9abed3` (Block 9: restore archived businesses)._
 
 ---
 
@@ -10,11 +10,11 @@ _Last updated: 2026-06-18 — end of Block 9 (Restore / Archive UI), smoke-teste
 
 **Automotive Business Intelligence CRM** — a multi-tenant, AI-native web app to upload messy automotive supplier data (spreadsheets/images), have AI clean + dedupe + brand-tag it, and let teams search/manage it. Built block-by-block per the master spec.
 
-**Status:** Blocks 1–9 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`, **read-only deterministic duplicate detection** at `/duplicates`, a **safe manual duplicate merge UI** (pick survivor → choose field sources → preview → confirm → update survivor + soft-archive losers) on those `/duplicates` groups, and now a **Restore / Archive UI** at `/database` (Active / Archived toggle → un-archive soft-deleted records one at a time). **Blocks 1–8 are committed + pushed (latest `be07fbd`); Block 9 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
+**Status:** Blocks 1–9 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`, **read-only deterministic duplicate detection** at `/duplicates`, a **safe manual duplicate merge UI** (pick survivor → choose field sources → preview → confirm → update survivor + soft-archive losers) on those `/duplicates` groups, and now a **Restore / Archive UI** at `/database` (Active / Archived toggle → un-archive soft-deleted records one at a time). **Blocks 1–9 are complete, smoke-tested, committed, and pushed (latest `d9abed3`).** Only `.claude/settings.local.json` remains uncommitted (local settings — do not commit). See §13.
 
 ## 2. Current block
 
-- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only), Block 8 (Safe Manual Duplicate Merge UI), Block 9 (Restore / Archive UI — pending checkpoint commit).
+- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only), Block 8 (Safe Manual Duplicate Merge UI), Block 9 (Restore / Archive UI) — **all committed + pushed (latest `d9abed3`).**
 - **Next up:** **Block 10 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: **member invites**, the deferred **Google Maps scraper CSV preset**, or AI-assisted cleaning/dedupe. NOTE: Block 9 covers single-record restore only — un-archiving a record clears its `deleted_at`; it is NOT a merge undo (it does not restore overwritten survivor fields). There is still NO merge history / audit log.
 
 ## 3. What has been implemented so far
@@ -97,7 +97,7 @@ _Last updated: 2026-06-18 — end of Block 9 (Restore / Archive UI), smoke-teste
 - **App layer:** `mergeBusinesses(workspaceId, { survivorId, loserIds, fieldSources })` + read-only `getActiveBusinessesByIds(supabase, workspaceId, ids)`. UI: `merge-sheet.tsx` (client, Sheet-based; survivor radios, per-field source `<select>`s shown only for conflicting fields, full preview table, archive notice, Confirm) — uses `useTransition`, inline error bar, `router.refresh()` on success (re-runs detection). `merge-sheet` owns its own trigger button and open state, rendered per group inside `duplicate-groups.tsx`; the planned separate `merge-launcher.tsx` was **not needed** (folded into `merge-sheet`). No new shadcn component (reused the existing `sheet`); no new dependency.
 - **Validated:** Block 8 smoke test PASSED (12/12) against real Supabase — Merge button on groups, sheet opens, survivor/default selection, field-source selection, preview matches sources, **Cancel writes nothing**, **Confirm updates only the survivor**, losers **soft-archived** and gone from active `/database`, group disappears/shrinks on refresh, **SQL check confirms loser rows still exist with `deleted_at` set**, workspace isolation holds, and no hard delete / no AI / no bulk / no `duplicate_score` write. `tsc --noEmit` + `npm run build` clean (`/duplicates` stays dynamic `ƒ`).
 
-**Block 9 — Restore / Archive UI (commit PENDING)**
+**Block 9 — Restore / Archive UI (commit `d9abed3`)**
 - **Restore (un-archive) of soft-deleted records**, surfaced as an **Active / Archived toggle** on the existing `/database` page. Closes the "bad-merge recovery = SQL Editor" gap from Block 8 and re-adds the `includeDeleted` capability removed in Block 5. **Pure app-layer change — NO migration, NO RLS/policy/grant change, NO new table, NO index, NO RPC, NO new dependency, NO new shadcn component, NO new route.**
 - **No schema/RLS work was needed because `0002_businesses.sql` was already designed for it:** the SELECT policy returns soft-deleted rows to members ("so edit/restore remains possible"), the UPDATE policy's `USING` is membership-only (NOT restricted to `deleted_at IS NULL`), and `UPDATE` is already granted. So restoring (an `UPDATE` that clears `deleted_at`) is permitted by the existing policies.
 - **View model:** **Active view is the default** (unchanged — lists `deleted_at IS NULL`). **Archived view is `?view=archived`** and lists **only archived records (`deleted_at IS NOT NULL`)**. The toggle preserves current search/filters and resets the page; "Clear filters" stays in the current view. Search / filter / sort / pagination are **reused** in both views.
@@ -278,21 +278,11 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 13. Git status summary
 
-- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6), `3bb6e0e` (Block 7), `be07fbd` (Block 8).
-- **Blocks 1–8 committed and pushed** (latest `be07fbd`).
-- **Block 9 (Restore / Archive UI) — implemented + smoke-tested, NOT yet committed.** Working tree (all modifications — no new files):
-  - Modified: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/business-toolbar.tsx`, `src/components/business/business-manager.tsx`, `src/app/(app)/database/page.tsx`, `docs/NEXT_HANDOFF.md`.
-  - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental — **exclude from the commit**). Never stage `.env.local`.
-  - No new migration / no schema / no RLS / no grant / no index / no RPC (Block 9 reuses existing UPDATE paths + RLS).
-- **Recommended checkpoint (smoke test passed — safe to commit now):** stage only the Block 9 files + this doc (NOT `.claude/settings.local.json`, NOT `.env.local`):
-  ```
-  git add src/lib/businesses/types.ts src/lib/businesses/queries.ts \
-    src/lib/businesses/actions.ts src/components/business/business-toolbar.tsx \
-    src/components/business/business-manager.tsx "src/app/(app)/database/page.tsx" \
-    docs/NEXT_HANDOFF.md
-  git commit -m "Block 9: restore archived businesses"
-  ```
-  Then push: `git push origin main`.
+- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6), `3bb6e0e` (Block 7), `be07fbd` (Block 8), `d9abed3` (Block 9).
+- **Blocks 1–9 are complete, smoke-tested, committed, and pushed** (latest `d9abed3` — Block 9: restore archived businesses). Local `HEAD` == `origin/main`.
+- Block 9 was all modifications — no new files: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/business-toolbar.tsx`, `src/components/business/business-manager.tsx`, `src/app/(app)/database/page.tsx`, `docs/NEXT_HANDOFF.md`. No new migration / schema / RLS / grant / index / RPC (reused existing UPDATE paths + RLS).
+- **Only `.claude/settings.local.json` remains uncommitted** (local settings — do NOT commit). Never stage `.env.local` (gitignored).
+- **No pending checkpoint** — the working tree is clean apart from that local settings file. Next work is Block 10 (not started).
 
 ## 14. Exact next prompt to paste after `/clear`
 
