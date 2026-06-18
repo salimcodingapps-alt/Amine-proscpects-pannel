@@ -32,6 +32,8 @@ export interface Business {
   status: BusinessStatus;
   createdAt: string;
   updatedAt: string;
+  /** Soft-delete timestamp: null = active; non-null = archived (Block 9). */
+  deletedAt: string | null;
 }
 
 /** Writable fields accepted by createBusiness / updateBusiness. */
@@ -94,6 +96,11 @@ export interface BusinessListFilters {
   /** 1-based page number. */
   page?: number;
   pageSize?: number;
+  /**
+   * Block 9: when true, list ARCHIVED records (deleted_at IS NOT NULL) instead of
+   * active ones. Absent/false = active records only (the default, unchanged).
+   */
+  archived?: boolean;
 }
 
 /** Paginated result returned by listBusinesses. */

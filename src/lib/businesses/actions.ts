@@ -112,6 +112,46 @@ export async function archiveBusiness(
 }
 
 /**
+ * Restore (un-archive) a single soft-deleted business record by clearing
+ * deleted_at (Block 9). This is an UPDATE — the mirror image of archiveBusiness.
+ * It only affects a row that is currently archived AND in the caller's workspace
+ * (the `deleted_at IS NOT NULL` guard + .select("id") confirm a row was hit; an
+ * already-active, foreign, or missing row aborts cleanly with an error). One
+ * record at a time — there is no bulk restore.
+ *
+ * RLS is the backstop: the update policy still enforces workspace membership and
+ * modified_by = auth.uid().
+ */
+export async function restoreBusiness(
+  workspaceId: string,
+  id: string
+): Promise<BusinessActionResult> {
+  if (!isUuid(workspaceId) || !isUuid(id)) {
+    return { error: "Invalid request." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { data, error } = await supabase
+    .from("businesses")
+    .update({ deleted_at: null, modified_by: user.id })
+    .eq("id", id)
+    .eq("workspace_id", workspaceId)
+    .not("deleted_at", "is", null)
+    .select("id");
+
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) {
+    return { error: "This record could not be restored. Refresh and try again." };
+  }
+  return {};
+}
+
+/**
  * Bulk-insert business records from a CSV import, after the user has explicitly
  * confirmed. Every row is RE-VALIDATED server-side (never trust the client):
  * invalid rows are skipped and reported, not silently fixed or imported. Valid

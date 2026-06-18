@@ -20,7 +20,7 @@ const FIELD_CLASS =
 const SEARCH_DEBOUNCE_MS = 350;
 
 /** URL param keys owned by the toolbar. */
-const PARAM_KEYS = ["q", "status", "wilaya", "type", "brand", "sort", "page"];
+const PARAM_KEYS = ["q", "status", "wilaya", "type", "brand", "sort", "page", "view"];
 
 /**
  * Search / filter / sort controls for the database list. The toolbar holds no
@@ -43,11 +43,21 @@ export function BusinessToolbar() {
 
   const status = searchParams.get("status") ?? "";
   const sort = searchParams.get("sort") ?? DEFAULT_BUSINESS_SORT;
+  const archived = searchParams.get("view") === "archived";
 
-  // Re-sync local inputs when the URL changes from outside the toolbar
-  // (back/forward navigation, Clear). Setting state to the same string is a
-  // no-op for the input value, so this never steals the caret while typing.
+  // The exact query string this toolbar last pushed itself. The sync effect
+  // below uses it to tell our OWN (debounced) commits apart from genuinely
+  // external URL changes (back/forward, Clear, view toggle). Without this, a
+  // debounced push that lands while the user is still typing would echo a now
+  // stale URL value back into local state and visibly "eat" characters.
+  const lastPushedRef = useRef<string | null>(null);
+
+  // Re-sync local inputs ONLY on external URL changes (back/forward navigation,
+  // Clear, view toggle) — never from our own commit, which would overwrite what
+  // the user is actively typing. If the current query string is exactly what we
+  // last pushed, the change is self-caused, so we leave local state alone.
   useEffect(() => {
+    if (searchParams.toString() === lastPushedRef.current) return;
     setSearch(searchParams.get("q") ?? "");
     setWilaya(searchParams.get("wilaya") ?? "");
     setType(searchParams.get("type") ?? "");
@@ -65,6 +75,7 @@ export function BusinessToolbar() {
     if (!("page" in updates)) next.delete("page");
 
     const qs = next.toString();
+    lastPushedRef.current = qs;
     startTransition(() => {
       router.push(qs ? `${pathname}?${qs}` : pathname);
     });
@@ -101,7 +112,11 @@ export function BusinessToolbar() {
   }, [search, wilaya, type, brand]);
 
   const hasActiveFilters = PARAM_KEYS.some(
-    (k) => k !== "page" && k !== "sort" && (searchParams.get(k) ?? "") !== ""
+    (k) =>
+      k !== "page" &&
+      k !== "sort" &&
+      k !== "view" &&
+      (searchParams.get(k) ?? "") !== ""
   );
 
   function clearAll() {
@@ -109,11 +124,49 @@ export function BusinessToolbar() {
     setWilaya("");
     setType("");
     setBrand("");
-    startTransition(() => router.push(pathname));
+    // Clearing filters keeps the current view (Active vs Archived).
+    const qs = archived ? "view=archived" : "";
+    lastPushedRef.current = qs;
+    startTransition(() =>
+      router.push(qs ? `${pathname}?${qs}` : pathname)
+    );
   }
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card/40 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div
+          className="inline-flex rounded-md border border-input p-0.5"
+          role="group"
+          aria-label="Active or archived records"
+        >
+          <button
+            type="button"
+            onClick={() => commit({ view: "" })}
+            aria-pressed={!archived}
+            className={`rounded px-3 py-1 text-sm transition-colors ${
+              !archived
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Active
+          </button>
+          <button
+            type="button"
+            onClick={() => commit({ view: "archived" })}
+            aria-pressed={archived}
+            className={`rounded px-3 py-1 text-sm transition-colors ${
+              archived
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Archived
+          </button>
+        </div>
+      </div>
+
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

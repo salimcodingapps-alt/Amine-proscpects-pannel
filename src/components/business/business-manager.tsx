@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Pencil, Archive } from "lucide-react";
+import { Loader2, Plus, Pencil, Archive, ArchiveRestore } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { BusinessPagination } from "@/components/business/business-pagination";
 import {
   archiveBusiness,
   createBusiness,
+  restoreBusiness,
   updateBusiness,
 } from "@/lib/businesses/actions";
 import {
@@ -149,6 +150,10 @@ function formToInput(form: FormState): BusinessInput {
  * Minimal manual CRUD for business records in the active workspace: list,
  * create, edit basic fields, and soft-delete (archive). Scoped entirely to the
  * passed workspaceId; the page remounts this on workspace switch (key=).
+ *
+ * Block 9: when `archived` is true this becomes the read/restore view — it lists
+ * soft-deleted records and offers Restore instead of Edit/Archive, and the
+ * create form is hidden.
  */
 export function BusinessManager({
   workspaceId,
@@ -157,6 +162,7 @@ export function BusinessManager({
   page,
   pageCount,
   hasFilters,
+  archived = false,
 }: {
   workspaceId: string;
   businesses: Business[];
@@ -167,6 +173,8 @@ export function BusinessManager({
   pageCount: number;
   /** Whether any search/filter is currently applied (affects empty-state copy). */
   hasFilters: boolean;
+  /** Block 9: archived (restore) view vs the default active view. */
+  archived?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -225,6 +233,26 @@ export function BusinessManager({
     });
   }
 
+  function handleRestore(id: string, name: string) {
+    if (
+      !window.confirm(
+        `Restore "${name}"?\n\nThis restores the archived business as an active record. It does not undo changes made to any merge survivor.`
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const res = await restoreBusiness(workspaceId, id);
+      if (res?.error) {
+        setError(res.error);
+        return;
+      }
+      reset("Business record restored.");
+    });
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6">
       {error ? (
@@ -242,10 +270,11 @@ export function BusinessManager({
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {total} {hasFilters ? "matching " : ""}record{total === 1 ? "" : "s"}
-          {hasFilters ? "" : " in this workspace"}.
+          {total} {hasFilters ? "matching " : ""}
+          {archived ? "archived " : ""}record{total === 1 ? "" : "s"}
+          {hasFilters ? "" : archived ? "" : " in this workspace"}.
         </p>
-        {openForm !== "new" ? (
+        {!archived && openForm !== "new" ? (
           <Button
             type="button"
             onClick={() => {
@@ -275,7 +304,13 @@ export function BusinessManager({
         <Card className="p-8 text-center">
           {hasFilters ? (
             <p className="text-sm text-muted-foreground">
-              No records match the current search or filters.
+              No {archived ? "archived " : ""}records match the current search or
+              filters.
+            </p>
+          ) : archived ? (
+            <p className="text-sm text-muted-foreground">
+              No archived records. Records you archive will appear here and can be
+              restored.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -289,7 +324,7 @@ export function BusinessManager({
 
       <div className="flex flex-col gap-3">
         {businesses.map((b) =>
-          openForm === b.id ? (
+          !archived && openForm === b.id ? (
             <BusinessForm
               key={b.id}
               title={`Edit — ${b.companyName}`}
@@ -332,30 +367,45 @@ export function BusinessManager({
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => {
-                    setOpenForm(b.id);
-                    setNotice(null);
-                    setError(null);
-                  }}
-                >
-                  <Pencil className="mr-1 h-4 w-4" />
-                  Edit
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => handleArchive(b.id, b.companyName)}
-                >
-                  <Archive className="mr-1 h-4 w-4" />
-                  Archive
-                </Button>
+                {archived ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => handleRestore(b.id, b.companyName)}
+                  >
+                    <ArchiveRestore className="mr-1 h-4 w-4" />
+                    Restore
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => {
+                        setOpenForm(b.id);
+                        setNotice(null);
+                        setError(null);
+                      }}
+                    >
+                      <Pencil className="mr-1 h-4 w-4" />
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => handleArchive(b.id, b.companyName)}
+                    >
+                      <Archive className="mr-1 h-4 w-4" />
+                      Archive
+                    </Button>
+                  </>
+                )}
               </div>
             </Card>
           )

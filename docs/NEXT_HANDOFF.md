@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work after `/clear`. Read this, `CLAUDE.md`/`AGENTS.md`, and `docs/CLAUDE_WORKFLOW.md` before doing anything.
 
-_Last updated: 2026-06-18 — end of Block 8 (Safe Manual Duplicate Merge UI), smoke-tested (12/12 PASS), awaiting checkpoint commit._
+_Last updated: 2026-06-18 — end of Block 9 (Restore / Archive UI), smoke-tested PASS, awaiting checkpoint commit. (Block 8 is now committed + pushed as `be07fbd`.)_
 
 ---
 
@@ -10,12 +10,12 @@ _Last updated: 2026-06-18 — end of Block 8 (Safe Manual Duplicate Merge UI), s
 
 **Automotive Business Intelligence CRM** — a multi-tenant, AI-native web app to upload messy automotive supplier data (spreadsheets/images), have AI clean + dedupe + brand-tag it, and let teams search/manage it. Built block-by-block per the master spec.
 
-**Status:** Blocks 1–8 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`, **read-only deterministic duplicate detection** at `/duplicates`, and now a **safe manual duplicate merge UI** (pick survivor → choose field sources → preview → confirm → update survivor + soft-archive losers) on those same `/duplicates` groups. **Blocks 1–7 are committed (latest `3bb6e0e`); Block 8 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
+**Status:** Blocks 1–9 complete and validated. App runs against a real Supabase project, is auth-gated end-to-end, is multi-tenant (workspaces), has its business-data table (`businesses`) with workspace-scoped RLS + minimal grants, manual CRUD, **server-side search / filter / sort / pagination** at `/database`, **CSV import** (upload → map → review → confirmed bulk insert) at `/upload`, **read-only deterministic duplicate detection** at `/duplicates`, a **safe manual duplicate merge UI** (pick survivor → choose field sources → preview → confirm → update survivor + soft-archive losers) on those `/duplicates` groups, and now a **Restore / Archive UI** at `/database` (Active / Archived toggle → un-archive soft-deleted records one at a time). **Blocks 1–8 are committed + pushed (latest `be07fbd`); Block 9 is implemented + smoke-tested but NOT yet committed** — see §13 for the recommended checkpoint.
 
 ## 2. Current block
 
-- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only), Block 8 (Safe Manual Duplicate Merge UI — pending checkpoint commit).
-- **Next up:** **Block 9 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: a **Restore / archive-history UI** (un-archive soft-deleted records — now more valuable since Block 8 archives merge losers; would re-add the `includeDeleted` option removed in Block 5), **member invites**, the deferred **Google Maps scraper CSV preset**, or AI-assisted cleaning/dedupe. NOTE: Block 8 covers merge only (manual, one group at a time); there is still NO restore/undo/history — recovery from a bad merge is via the SQL Editor (clear `deleted_at`).
+- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only), Block 8 (Safe Manual Duplicate Merge UI), Block 9 (Restore / Archive UI — pending checkpoint commit).
+- **Next up:** **Block 10 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: **member invites**, the deferred **Google Maps scraper CSV preset**, or AI-assisted cleaning/dedupe. NOTE: Block 9 covers single-record restore only — un-archiving a record clears its `deleted_at`; it is NOT a merge undo (it does not restore overwritten survivor fields). There is still NO merge history / audit log.
 
 ## 3. What has been implemented so far
 
@@ -97,6 +97,17 @@ _Last updated: 2026-06-18 — end of Block 8 (Safe Manual Duplicate Merge UI), s
 - **App layer:** `mergeBusinesses(workspaceId, { survivorId, loserIds, fieldSources })` + read-only `getActiveBusinessesByIds(supabase, workspaceId, ids)`. UI: `merge-sheet.tsx` (client, Sheet-based; survivor radios, per-field source `<select>`s shown only for conflicting fields, full preview table, archive notice, Confirm) — uses `useTransition`, inline error bar, `router.refresh()` on success (re-runs detection). `merge-sheet` owns its own trigger button and open state, rendered per group inside `duplicate-groups.tsx`; the planned separate `merge-launcher.tsx` was **not needed** (folded into `merge-sheet`). No new shadcn component (reused the existing `sheet`); no new dependency.
 - **Validated:** Block 8 smoke test PASSED (12/12) against real Supabase — Merge button on groups, sheet opens, survivor/default selection, field-source selection, preview matches sources, **Cancel writes nothing**, **Confirm updates only the survivor**, losers **soft-archived** and gone from active `/database`, group disappears/shrinks on refresh, **SQL check confirms loser rows still exist with `deleted_at` set**, workspace isolation holds, and no hard delete / no AI / no bulk / no `duplicate_score` write. `tsc --noEmit` + `npm run build` clean (`/duplicates` stays dynamic `ƒ`).
 
+**Block 9 — Restore / Archive UI (commit PENDING)**
+- **Restore (un-archive) of soft-deleted records**, surfaced as an **Active / Archived toggle** on the existing `/database` page. Closes the "bad-merge recovery = SQL Editor" gap from Block 8 and re-adds the `includeDeleted` capability removed in Block 5. **Pure app-layer change — NO migration, NO RLS/policy/grant change, NO new table, NO index, NO RPC, NO new dependency, NO new shadcn component, NO new route.**
+- **No schema/RLS work was needed because `0002_businesses.sql` was already designed for it:** the SELECT policy returns soft-deleted rows to members ("so edit/restore remains possible"), the UPDATE policy's `USING` is membership-only (NOT restricted to `deleted_at IS NULL`), and `UPDATE` is already granted. So restoring (an `UPDATE` that clears `deleted_at`) is permitted by the existing policies.
+- **View model:** **Active view is the default** (unchanged — lists `deleted_at IS NULL`). **Archived view is `?view=archived`** and lists **only archived records (`deleted_at IS NOT NULL`)**. The toggle preserves current search/filters and resets the page; "Clear filters" stays in the current view. Search / filter / sort / pagination are **reused** in both views.
+- **Server action `restoreBusiness(workspaceId, id)`** (in `actions.ts`), the mirror of `archiveBusiness`: validates UUIDs → `getUser()` → `UPDATE … SET deleted_at = null, modified_by = auth.uid()` guarded by `id` + `workspace_id` + `deleted_at IS NOT NULL`, with `.select("id")` to confirm a row was hit (an already-active / foreign / missing row aborts cleanly with an error). **One record at a time — no bulk restore.** RLS is still the backstop (membership + `modified_by = auth.uid()`).
+- **Restore is NOT a merge undo.** It only reactivates the archived record; it does NOT restore fields overwritten on a merge survivor. The confirmation dialog says exactly this: *"This restores the archived business as an active record. It does not undo changes made to any merge survivor."*
+- **Query layer:** `listBusinesses` gained an optional `filters.archived` flag — when true it applies `.not("deleted_at", "is", null)` instead of `.is("deleted_at", null)`; everything else (workspace scope, search, filters, sort, pagination, count) is unchanged. `Business` now carries `deletedAt` (added to `BUSINESS_COLUMNS`/`BusinessRow`/`mapRow`); `listActiveBusinessesForDedup` and `getActiveBusinessesByIds` stay active-only and untouched.
+- **UI:** `business-manager.tsx` takes an `archived` prop — in Archived view it renders **Restore** (with a `window.confirm`) instead of Edit/Archive, **hides the Add-business form**, and uses archived-aware count/empty-state copy. `business-toolbar.tsx` adds the Active/Archived toggle (writes `view`).
+- **Input-state bug found + patched before commit (in `business-toolbar.tsx`).** Symptom: characters occasionally disappeared while typing in the search/filter inputs. Cause: the URL→local re-sync `useEffect` fired on *every* `searchParams` change — including the toolbar's own debounced `router.push` — so a self-caused URL update landing mid-typing echoed a stale value back and overwrote newer keystrokes. Fix: a `lastPushedRef` records the exact query string the toolbar pushes (in `commit`/`clearAll`); the sync effect early-returns when the incoming `searchParams` equals it, so it re-syncs ONLY on genuinely external changes (back/forward, Clear, view toggle) — never during the user's own typing. Local React state stays authoritative while typing. Re-tested PASS.
+- **Validated:** Block 9 smoke test PASSED against real Supabase — Active/Archived toggle, archived list shows soft-deleted rows (incl. Block 8 merge losers), search/filter/sort/pagination work in Archived, **Restore** returns a record to Active (and a restored merge-loser reappears in `/database`), confirmation wording correct, Cancel writes nothing, Add-business hidden in Archived, workspace isolation holds, no hard delete — plus the typing-stability patch retested. `tsc --noEmit` + `npm run build` clean (`/database` stays dynamic `ƒ`).
+
 ## 4. Files created
 
 **Block 4:**
@@ -122,6 +133,8 @@ _Last updated: 2026-06-18 — end of Block 8 (Safe Manual Duplicate Merge UI), s
 
 **Block 8:**
 - `src/components/business/merge-sheet.tsx` (client — Sheet-based merge UI: survivor radios, per-field source pickers for conflicting fields, merged preview, archive notice, Confirm; `useTransition` + inline error bar + `router.refresh()`. Owns its own trigger button/open state — the planned `merge-launcher.tsx` was folded in here.)
+
+**Block 9:** *(no new files — pure modifications of existing files; see §5.)*
 
 (See git history for Block 1–3 file lists; Block 3 files listed in prior handoff revisions.)
 
@@ -152,6 +165,15 @@ _Last updated: 2026-06-18 — end of Block 8 (Safe Manual Duplicate Merge UI), s
 - `src/lib/businesses/actions.ts` (added `mergeBusinesses`; imports `getActiveBusinessesByIds` + merge types. Existing create/update/archive/import untouched).
 - `src/components/business/duplicate-groups.tsx` (threaded a new `workspaceId` prop through; renders `<MergeSheet>` per group card — still otherwise read-only presentation).
 - `src/app/(app)/duplicates/page.tsx` (passes `active.id` into `<DuplicateGroups>`).
+- `docs/NEXT_HANDOFF.md` (this file).
+
+**Block 9:**
+- `src/lib/businesses/types.ts` (added `deletedAt: string | null` to `Business`; added optional `archived?: boolean` to `BusinessListFilters`).
+- `src/lib/businesses/queries.ts` (selected `deleted_at` → `BUSINESS_COLUMNS`/`BusinessRow`/`mapRow`; `listBusinesses` applies the active-vs-archived `deleted_at` filter based on `filters.archived`. Dedup/merge queries untouched).
+- `src/lib/businesses/actions.ts` (added `restoreBusiness`; existing create/update/archive/import/merge untouched).
+- `src/app/(app)/database/page.tsx` (parses `?view=archived`, passes `archived` to the query + `<BusinessManager>`; remount key includes the view).
+- `src/components/business/business-toolbar.tsx` (Active/Archived toggle; `view` added to owned params; **input-state typing bug patched** — `lastPushedRef` gates the URL→local sync so self-caused commits don't overwrite active typing).
+- `src/components/business/business-manager.tsx` (`archived` prop → Restore instead of Edit/Archive, hides Add-business form, archived-aware copy; `restoreBusiness` + confirm dialog).
 - `docs/NEXT_HANDOFF.md` (this file).
 
 ## 6. Important decisions made
@@ -189,6 +211,13 @@ _Last updated: 2026-06-18 — end of Block 8 (Safe Manual Duplicate Merge UI), s
   - **Survivor-first sequential writes** (no transaction/RPC by design). Survivor UPDATE first (`.select("id")` confirms a hit); only then archive losers. Partial failure is always recoverable and re-runnable — losers are soft-deleted, never destroyed. `MergeResult` carries `{ survivorUpdated, archivedIds, failedIds, error? }`.
   - **No Undo / no restore UI in Block 8** (locked). A partial undo would mislead (can't restore overwritten survivor fields without history). Interim recovery from a bad merge = SQL Editor (clear `deleted_at` on the archived losers; the survivor's pre-merge values still live in those archived rows). A proper Restore UI / merge history is a clean future block.
   - **UI reuses the existing `sheet` primitive** (no new shadcn component, no new dependency); native `<select>`/`<table>`, inline error bar, `useTransition`, `router.refresh()` — same conventions as `business-manager`/`business-importer`.
+- **Block 9 specifics:**
+  - **Restore is a pure app-layer feature — no migration/RLS/grant/RPC/table/index.** The `0002` schema already permits it (SELECT returns archived rows to members; UPDATE `USING` is membership-only, not `deleted_at IS NULL`-gated; `UPDATE` granted). This satisfied the "stop and ask before any migration" rule — none was required.
+  - **Active view stays the default; Archived view is `?view=archived`** (lists `deleted_at IS NOT NULL`). The Archived view reuses the same search/filter/sort/pagination via a single optional `filters.archived` flag on `listBusinesses` (default false = active, unchanged).
+  - **Restore = clear `deleted_at` + set `modified_by`, one record at a time.** Guarded by `deleted_at IS NOT NULL` + `.select("id")` so only an actually-archived in-workspace row is affected. **No bulk restore, no hard delete.**
+  - **Restore is explicitly NOT a merge undo** — it reactivates the record but does not restore overwritten survivor fields. The confirm dialog states this. A real merge history / field-level undo remains a future block (would need a new table → stop and ask).
+  - **Restore requires confirmation** (`window.confirm`), same pattern as Archive.
+  - **Toolbar typing-stability invariant:** local React state is authoritative for text inputs while typing; the URL→local sync must only run on EXTERNAL navigation (back/forward, Clear, view toggle), never on the toolbar's own debounced commit. Enforced via `lastPushedRef` in `business-toolbar.tsx`. (Regression guard: if you change how the toolbar pushes the URL, keep `lastPushedRef` in sync or typing will eat characters again.)
 
 ## 7. Standing rules for every NEW table (carry forward)
 
@@ -226,22 +255,21 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 11. Build / typecheck / test results
 
-- `npx tsc --noEmit` → **clean** (exit 0) after Block 8.
+- `npx tsc --noEmit` → **clean** (exit 0) after Block 9.
 - `npm run build` → **clean**. `/database`, `/upload`, and `/duplicates` dynamic (each resolves auth/workspace at request time); auth pages static.
 - **Block 4 smoke test (user-confirmed, real Supabase):** all 8 checks PASS.
 - **Block 5 smoke test (user-confirmed, real Supabase + dev seed):** PASS — search/filter/sort/pagination/URL state/workspace isolation/CRUD; brand filter case-insensitive.
 - **Block 6 smoke test (user-confirmed, real Supabase):** PASS — upload + in-browser parse, header detection, column mapping (clean semantic headers), review/validation counts, confirmed import, **real cleaned Boumerdes CSV of 64 rows** imported, records appear in `/database`, search + wilaya + brand filters work on imported records, workspace scoping holds, invalid-row handling (bad email + blank company name skipped & shown), dark-mode dropdown readability fixed. (>500-row cap not manually exercised — guarded in code.)
 - **Block 7 smoke test (user-confirmed, real Supabase):** PASS (15/15) — Duplicates nav + page load, read-only header/description, scanned-count, no cap warning under 2000, group cards, same-phone across formats, case-insensitive email, normalized website, name+wilaya/city, **name-only control not grouped** (no false positive), **blank-contact controls not grouped**, multi-signal reason badges, Inspect-in-database links filter `/database`, workspace isolation, detection read-only (no record changes).
 - **Block 8 smoke test (user-confirmed, real Supabase):** PASS (12/12) — Merge button on groups, sheet opens, survivor/default selection, field-source selection, **preview matches selected sources**, **Cancel writes nothing**, **Confirm updates only the chosen survivor**, losers soft-archived + gone from active `/database`, duplicate group disappears/shrinks on refresh, **SQL check: loser rows still exist with `deleted_at` set**, workspace isolation holds, and no hard delete / no AI / no bulk / no `duplicate_score` write.
-
-## 12. Known bugs or unfinished items
+- **Block 9 smoke test (user-confirmed, real Supabase):** PASS — Active/Archived toggle, Archived lists soft-deleted rows (incl. Block 8 merge losers), search/filter/sort/pagination in Archived, **Restore** returns a record to Active (restored merge-loser reappears in `/database`), confirm wording correct, Cancel writes nothing, Add-business hidden in Archived, workspace isolation. **Plus the toolbar typing-stability patch retested PASS** (no characters dropped while typing in search/wilaya/type/brand inputs; toggle + Clear + restore all still work).
 
 - No known bugs. Limitations by design (deferred):
   - **CSV import is generic only** — raw Google Maps scraper CSVs (non-semantic headers like `hfpxzc href`, `qBF1Pd`) require the user to clean/normalize to semantic headers first. **DEFERRED FUTURE BLOCK: a "Google Maps scraper CSV" preset** that maps known raw column codes by position/pattern (one-click "apply preset" on the mapping step). Not started.
   - **Duplicate detection (Block 7)** is still read-only deterministic detection; it does **not** write `duplicate_score`. Detection is **capped at 2000 active rows/workspace** (full-scale scan deferred) and **excludes address similarity** from v1.
-  - **Duplicate merge (Block 8)** now exists on the `/duplicates` groups: **manual, one group at a time** — pick survivor, choose field sources, preview, confirm → survivor UPDATEd + losers soft-archived. By design it has **no auto-merge, no bulk merge, no AI, no `duplicate_score` write, and no Undo/restore/history**. Recovery from a regretted merge is currently **manual via the SQL Editor** (clear `deleted_at` on the archived losers). A **Restore / archive-history UI** is the natural next deferred block (would also re-add the `includeDeleted` option removed in Block 5).
+  - **Duplicate merge (Block 8)** exists on the `/duplicates` groups: **manual, one group at a time** — pick survivor, choose field sources, preview, confirm → survivor UPDATEd + losers soft-archived. By design it has **no auto-merge, no bulk merge, no AI, no `duplicate_score` write**. Merge losers can now be reactivated via the Block 9 Restore UI, BUT restore is **not a merge undo** — it does not restore fields overwritten on the survivor. Full field-level merge undo / merge history is still deferred (would need a new table → stop and ask).
   - **No XLSX import** (CSV only). No AI cleaning, no OCR, no merge UI, no map view. (`duplicate_score`/`latitude`/`longitude` columns exist but are unused — `duplicate_score` is intentionally NOT written by Block 7.) **No import dedupe** — re-importing the same file creates duplicates (by design for now; detection at `/duplicates` surfaces them after the fact).
-  - **No restore UI** for archived records (soft-delete works; un-archive deferred). `listBusinesses` always hides `deleted_at` rows (the `includeDeleted` option was removed in Block 5 — re-add when building restore).
+  - **Restore UI shipped in Block 9** — archived records can be un-archived one at a time from the `/database` Archived view (`?view=archived`). `listBusinesses` now takes an optional `archived` flag (re-adds the `includeDeleted` capability removed in Block 5); the default remains active-only. Still **no bulk restore** and **no merge-undo / merge history**.
   - **Brand filter is canonical-match only** — unknown/odd-cased brands stored *before* Block 5 won't retroactively match a different-cased filter; new/edited records, imports, and the dev seed are canonical.
   - **Invites still deferred** — members are only auto-provisioned on signup; most workspaces have one member.
   - **Member identity:** only the current user's own email resolves (no profiles table).
@@ -250,26 +278,25 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 13. Git status summary
 
-- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6), `3bb6e0e` (Block 7).
-- **Blocks 1–7 committed and pushed** (latest `3bb6e0e`).
-- **Block 8 (Safe Manual Duplicate Merge UI) — implemented + smoke-tested (12/12), NOT yet committed.** Working tree:
-  - Modified: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/duplicate-groups.tsx`, `src/app/(app)/duplicates/page.tsx`, `docs/NEXT_HANDOFF.md`.
-  - New (untracked): `src/components/business/merge-sheet.tsx`.
-  - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental — exclude from the commit).
-  - No new migration / no schema / no index / no RPC (Block 8 reuses existing UPDATE paths + RLS).
-- **Recommended checkpoint (smoke test passed — safe to commit now):** stage the Block 8 project files (NOT `.claude/settings.local.json`):
+- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6), `3bb6e0e` (Block 7), `be07fbd` (Block 8).
+- **Blocks 1–8 committed and pushed** (latest `be07fbd`).
+- **Block 9 (Restore / Archive UI) — implemented + smoke-tested, NOT yet committed.** Working tree (all modifications — no new files):
+  - Modified: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/business-toolbar.tsx`, `src/components/business/business-manager.tsx`, `src/app/(app)/database/page.tsx`, `docs/NEXT_HANDOFF.md`.
+  - Also a pre-existing `.claude/settings.local.json` change (local settings, incidental — **exclude from the commit**). Never stage `.env.local`.
+  - No new migration / no schema / no RLS / no grant / no index / no RPC (Block 9 reuses existing UPDATE paths + RLS).
+- **Recommended checkpoint (smoke test passed — safe to commit now):** stage only the Block 9 files + this doc (NOT `.claude/settings.local.json`, NOT `.env.local`):
   ```
   git add src/lib/businesses/types.ts src/lib/businesses/queries.ts \
-    src/lib/businesses/actions.ts src/components/business/merge-sheet.tsx \
-    src/components/business/duplicate-groups.tsx "src/app/(app)/duplicates/page.tsx" \
+    src/lib/businesses/actions.ts src/components/business/business-toolbar.tsx \
+    src/components/business/business-manager.tsx "src/app/(app)/database/page.tsx" \
     docs/NEXT_HANDOFF.md
-  git commit -m "Block 8: safe manual duplicate merge UI"
+  git commit -m "Block 9: restore archived businesses"
   ```
   Then push: `git push origin main`.
 
 ## 14. Exact next prompt to paste after `/clear`
 
-> First confirm Block 8 is committed (see §13). If not, commit + push the checkpoint before starting Block 9.
+> First confirm Block 9 is committed + pushed (see §13). If not, commit + push the checkpoint before starting Block 10.
 
 ```
 Resuming the Automotive BI CRM build after a context reset.
@@ -279,15 +306,13 @@ First, read these before doing anything:
 - docs/NEXT_HANDOFF.md
 - docs/CLAUDE_WORKFLOW.md
 
-Then summarize: current project state, the last completed block (Block 8 — Safe Manual
-Duplicate Merge UI), confirm Block 8 is committed + pushed, and propose what Block 9
-should cover (candidates: a RESTORE / archive-history UI — un-archive soft-deleted
-records, now more valuable since Block 8 archives merge losers, and would re-add the
-includeDeleted option removed in Block 5; member invites; the deferred Google Maps
-scraper CSV preset; or AI-assisted cleaning/dedupe). Confirm scope with me.
+Then summarize: current project state, the last completed block (Block 9 — Restore /
+Archive UI), confirm Block 9 is committed + pushed, and propose what Block 10 should
+cover (candidates: member invites; the deferred Google Maps scraper CSV preset; or
+AI-assisted cleaning/dedupe). Confirm scope with me.
 
 Do NOT write code yet. After summarizing, wait for my confirmation.
-When approved, plan Block 9 only. Follow the block-by-block + 100k smart-zone rules.
+When approved, plan Block 10 only. Follow the block-by-block + 100k smart-zone rules.
 Standing rule for every NEW table: RLS enabled AND minimal table GRANTs (revoke all
 from anon/authenticated, then grant only what's needed). Scope all business data to
 workspace_id and reuse the is_workspace_member() helper in policies. No hard delete

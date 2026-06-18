@@ -58,6 +58,9 @@ export default async function DatabasePage({
     ? (sortRaw as BusinessSort)
     : undefined;
   const pageNum = Math.max(1, Number.parseInt(firstParam(sp.page), 10) || 1);
+  // Block 9: ?view=archived lists soft-deleted records (restore view). Any other
+  // value (or none) keeps the default active-records view.
+  const archived = firstParam(sp.view) === "archived";
 
   const hasFilters = Boolean(
     search.trim() ||
@@ -77,18 +80,20 @@ export default async function DatabasePage({
       brand,
       sort,
       page: pageNum,
+      archived,
     });
     content = (
       <BusinessManager
-        // Remount when the active workspace changes so any open form and its
-        // local state reset to the newly-selected workspace.
-        key={active.id}
+        // Remount when the active workspace OR view changes so any open form and
+        // its local state reset to the newly-selected context.
+        key={`${active.id}:${archived ? "archived" : "active"}`}
         workspaceId={active.id}
         businesses={result.items}
         total={result.total}
         page={result.page}
         pageCount={result.pageCount}
         hasFilters={hasFilters}
+        archived={archived}
       />
     );
   } else {
