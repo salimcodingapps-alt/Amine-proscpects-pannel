@@ -2,7 +2,7 @@
 
 > Single source of truth for resuming work after `/clear`. Read this, `CLAUDE.md`/`AGENTS.md`, and `docs/CLAUDE_WORKFLOW.md` before doing anything.
 
-_Last updated: 2026-06-18 — Blocks 1–9 complete, smoke-tested, committed, and pushed. Latest commit `d9abed3` (Block 9: restore archived businesses)._
+_Last updated: 2026-06-18 — **Blocks 1–10 complete, committed, pushed.** Block 10 (Database UI/UX polish) is finished, smoke-tested, committed (`Block 10: database UI polish`, on top of Block 9 `d9abed3`) and pushed to `origin/main`. Presentation-only: desktop table + mobile cards, color-coded status badges, balanced toolbar, Import CSV link — no backend/logic changes. See §2._
 
 ---
 
@@ -14,8 +14,26 @@ _Last updated: 2026-06-18 — Blocks 1–9 complete, smoke-tested, committed, an
 
 ## 2. Current block
 
-- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only), Block 8 (Safe Manual Duplicate Merge UI), Block 9 (Restore / Archive UI) — **all committed + pushed (latest `d9abed3`).**
-- **Next up:** **Block 10 — NOT started; do not start without confirmation.** Confirm scope with the user before planning. Candidates from the master spec / deferred list: **member invites**, the deferred **Google Maps scraper CSV preset**, or AI-assisted cleaning/dedupe. NOTE: Block 9 covers single-record restore only — un-archiving a record clears its `deleted_at`; it is NOT a merge undo (it does not restore overwritten survivor fields). There is still NO merge history / audit log.
+- **Completed:** Block 1 (App Foundation), Block 2 (Authentication), Block 3 (Workspace Architecture), Block 4 (Schema / Business Data), Block 5 (Search / Filter / Sort), Block 6 (CSV Import), Block 7 (Duplicate Detection — read-only), Block 8 (Safe Manual Duplicate Merge UI), Block 9 (Restore / Archive UI), Block 10 (Database UI/UX polish) — **all committed + pushed.**
+- **Block 10 — Database UI/UX polish (✅ COMPLETE — smoke-tested, committed as `Block 10: database UI polish`, pushed).** This was a **presentation-only** block: improve the look/feel/UX of the `/database` experience using the **Refero design MCP for inspiration only** (researched modern CRM/database UX patterns — Attio / Linear / Rox dark-CRM references; nothing copied). The user explicitly chose this over the deferred Google Maps CSV preset / member invites / AI work, and wanted Refero specifically. **Plan/research history retained in the sub-bullets below; the as-shipped summary follows the invariants bullet.**
+  - **Refero MCP status:** added to project local config via `claude mcp add --transport http refero https://api.refero.design/mcp --header "Authorization: Bearer <token>"` (written to `C:\Users\Shadow\.claude.json`, project-scoped). **Its tools were NOT live in the session where it was added** — Claude Code loads MCP servers at startup, so a **restart is required** (a one-time trust prompt for the new server may appear on relaunch). If a Refero tool still isn't available after restart, check `claude mcp list` / re-add.
+  - **Block 10 STRICT constraints (from the user):** NO new tables, migrations, RLS changes, grants, RPC, AI feature work, import-logic changes, duplicate-detection logic changes, merge-logic changes, and **no `restoreBusiness` logic changes unless a UI bug directly requires it**. No Block 11 work. Do not commit or push until told.
+  - **Research targets (Refero, inspiration only):** database list layouts; filter/search bars; Active/Archived toggles; record cards or tables; action buttons; empty states; restore/archive flows; mobile CRM layouts.
+  - **Likely files (database UI only):** `src/components/business/business-manager.tsx` (list/cards/action buttons/empty states/count/form layout — **markup/className only; leave all handlers, state, props, and server-action calls intact**), `src/components/business/business-toolbar.tsx` (filter bar + Active/Archived control — **do NOT touch the `lastPushedRef` URL-sync/debounce/commit logic or the `q/status/wilaya/type/brand/sort/page/view` param contract**), `src/components/business/business-pagination.tsx` (pager styling; keep `goTo`/URL logic), `src/app/(app)/database/page.tsx` (header/description/container; keep `searchParams`/query logic). **Flag before touching anything app-wide:** `src/components/layout/{page-header,placeholder}.tsx`, shared `src/components/ui/*` primitives, and `src/app/globals.css` theme tokens — prefer per-call-site classes + small local presentational components in `components/business/` over editing shared files. No new dependency.
+  - **Approved checklist:** (1) research patterns via Refero; (2) polish filter/search bar + Active/Archived segmented control + Clear affordance; (3) record list hierarchy/spacing (optional desktop table / mobile cards — presentation only); (4) clearer action-button affordances (distinguish Archive from Edit/Restore); (5) friendlier empty states for the 3 existing branches (no records / no match / no archived); (6) restore/archive flow polish — **keep the restore confirm wording**: *"This restores the archived business as an active record. It does not undo changes made to any merge survivor."*; (7) pagination styling; (8) responsive/mobile pass; (9) verify `tsc --noEmit` + `npm run build` clean and behavior unchanged (search/filter/sort/page/toggle/restore); (10) stop for the user's smoke test — no commit/push.
+  - **Invariants to preserve:** the toolbar typing-stability fix (`lastPushedRef`), the Active/Archived behavior + URL param contract, remount keys, and `/database` staying dynamic `ƒ`. NOTE (unchanged): Block 9 restore is single-record only and is NOT a merge undo; no merge history / audit log exists.
+  - **✅ AS SHIPPED (Block 10):**
+    - **Desktop = table-style business list** (columns: Business · Brands · Type · Wilaya · Status · Updated · Actions) in a rounded, elevated container with a gold left-accent **on row hover only** (inset shadow — purely visual, NO real selection state). **Mobile = cards** (switch at the `md` breakpoint). Both render the same `businesses` array via the same handlers.
+    - **New `src/components/business/status-badge.tsx`** — color-codes the **existing** four statuses only (new = gold, contacted = blue, qualified = green, inactive = gray) as ring-pills. **No new status types, no new DB field.**
+    - **Balanced toolbar (chosen direction):** compact, right-aligned "Quick find…" search (deliberately not dominant); the **filters are the main discovery controls**; the **Active / Archived** segmented toggle stays clearly on the left.
+    - **`Add business` (gold) and `Import CSV` are prominent full-size actions.** **Import CSV is a simple `<Link href="/upload">`** — no import logic touched, no new route.
+    - Compact Edit / Archive / Restore row actions with hover affordances; friendlier empty states for the 3 branches; **Restore confirm wording unchanged**: *"This restores the archived business as an active record. It does not undo changes made to any merge survivor."*
+    - **Files touched (only):** `business-manager.tsx`, `business-toolbar.tsx`, `business-pagination.tsx`, `status-badge.tsx` (new), and `docs/NEXT_HANDOFF.md`. **`src/app/(app)/database/page.tsx` was NOT modified.** No new dependency; `globals.css` and `src/components/ui/*` untouched.
+    - **NOT changed (verified):** no backend, database, RLS, grants, RPC, migration, import logic, duplicate logic, merge logic, or `restoreBusiness` logic.
+    - **Brand logos: NOT implemented** — remain a future possible UI enhancement (feasible from existing `supportedBrands` via bundled local SVGs + an initial-chip fallback, no DB change; deferred — do not add logo files / icon packages / remote logo APIs without a new scope).
+    - **Rollback patches on the Desktop (not in git):** `block10-ui-table-v1.patch` (first table pass) and `block10-ui-table-balanced.patch` (the shipped balanced version). Restore either with `git apply "<path>"`.
+    - **Verification:** `npx tsc --noEmit` clean (exit 0); `npm run build` clean; `/database` stays dynamic `ƒ`. User-confirmed browser smoke test PASSED.
+- **Next up:** **Block 11 — not yet scoped.** Deferred backlog (unchanged): Google Maps scraper CSV preset, member invites, AI cleaning/OCR, brand logos in the Brands column, bulk restore, merge history / field-level merge undo.
 
 ## 3. What has been implemented so far
 
@@ -278,35 +296,35 @@ In `.env.local` (gitignored; template in `.env.local.example`):
 
 ## 13. Git status summary
 
-- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6), `3bb6e0e` (Block 7), `be07fbd` (Block 8), `d9abed3` (Block 9).
-- **Blocks 1–9 are complete, smoke-tested, committed, and pushed** (latest `d9abed3` — Block 9: restore archived businesses). Local `HEAD` == `origin/main`.
+- Branch: **main** (tracks `origin/main` on GitHub `salimcodingapps-alt/Amine-proscpects-pannel`). Commits: `92a2354` (Block 1), `c92a059` (Block 2), `36a02b1` (docs), `1feb3c3` (Block 3), `b32d8dd` (Block 4), `53a0a8f` (Block 5), `05461db` (Block 6), `3bb6e0e` (Block 7), `be07fbd` (Block 8), `d9abed3` (Block 9), `3038111` (docs), plus the **Block 10** commit (`Block 10: database UI polish`) on top.
+- **Blocks 1–10 are complete, smoke-tested, committed, and pushed.** Block 10 (database UI polish) sits on top of Block 9 (`d9abed3`). Local `HEAD` == `origin/main`.
 - Block 9 was all modifications — no new files: `src/lib/businesses/types.ts`, `src/lib/businesses/queries.ts`, `src/lib/businesses/actions.ts`, `src/components/business/business-toolbar.tsx`, `src/components/business/business-manager.tsx`, `src/app/(app)/database/page.tsx`, `docs/NEXT_HANDOFF.md`. No new migration / schema / RLS / grant / index / RPC (reused existing UPDATE paths + RLS).
 - **Only `.claude/settings.local.json` remains uncommitted** (local settings — do NOT commit). Never stage `.env.local` (gitignored).
-- **No pending checkpoint** — the working tree is clean apart from that local settings file. Next work is Block 10 (not started).
+- **No pending checkpoint** — the working tree is clean apart from that local settings file. Next work is Block 11 (not yet scoped).
+- **Block 10 rollback patches (Desktop, not in git):** `block10-ui-table-v1.patch` (first table pass) and `block10-ui-table-balanced.patch` (shipped balanced version). Restore via `git apply "<path>"`.
 
-## 14. Exact next prompt to paste after `/clear`
+## 14. Exact next prompt to paste after the restart (resuming Block 10)
 
-> First confirm Block 9 is committed + pushed (see §13). If not, commit + push the checkpoint before starting Block 10.
+> Block 10 is already scoped + approved (see §2). The restart was to load the Refero design MCP. After relaunch, approve any Refero trust prompt, then confirm a Refero tool is available (e.g. `claude mcp list` shows `refero`, or a Refero tool appears) BEFORE doing design research.
 
 ```
-Resuming the Automotive BI CRM build after a context reset.
+Resuming the Automotive BI CRM build after restarting Claude Code to load the Refero MCP.
 
 First, read these before doing anything:
 - CLAUDE.md and AGENTS.md
-- docs/NEXT_HANDOFF.md
+- docs/NEXT_HANDOFF.md  (Block 10 scope + checklist is in §2)
 - docs/CLAUDE_WORKFLOW.md
 
-Then summarize: current project state, the last completed block (Block 9 — Restore /
-Archive UI), confirm Block 9 is committed + pushed, and propose what Block 10 should
-cover (candidates: member invites; the deferred Google Maps scraper CSV preset; or
-AI-assisted cleaning/dedupe). Confirm scope with me.
+Then: confirm the Refero MCP is connected and a Refero tool is callable. Verify repo state
+(git log --oneline -5, git status --short) — expect HEAD 3038111, only
+.claude/settings.local.json modified locally, nothing to commit.
 
-Do NOT write code yet. After summarizing, wait for my confirmation.
-When approved, plan Block 10 only. Follow the block-by-block + 100k smart-zone rules.
-Standing rule for every NEW table: RLS enabled AND minimal table GRANTs (revoke all
-from anon/authenticated, then grant only what's needed). Scope all business data to
-workspace_id and reuse the is_workspace_member() helper in policies. No hard delete
-unless explicitly approved. If an index/migration/RPC seems needed, stop and ask first.
-Any write/restore feature: get explicit approval on exactly what it may modify before
-coding, and prefer recoverable (soft) operations.
+Block 10 = Database UI/UX polish ONLY, using Refero for inspiration (do NOT copy any design
+exactly). Honor the §2 STRICT constraints: no tables/migrations/RLS/grants/RPC/AI/import/
+dedupe/merge changes; no restoreBusiness logic changes unless a UI bug requires it; no
+Block 11 work; do not commit or push until I say so. Preserve the toolbar lastPushedRef
+typing-stability fix, the Active/Archived URL param contract, and /database staying dynamic.
+
+Start by using Refero to research the §2 target patterns, summarize the pattern notes, then
+work the approved checklist. Wait for my confirmation before editing files.
 ```

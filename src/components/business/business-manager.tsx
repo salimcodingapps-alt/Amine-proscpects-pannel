@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Pencil, Archive, ArchiveRestore } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Pencil,
+  Archive,
+  ArchiveRestore,
+  FileUp,
+  Building2,
+  SearchX,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { BusinessToolbar } from "@/components/business/business-toolbar";
 import { BusinessPagination } from "@/components/business/business-pagination";
+import { StatusBadge } from "@/components/business/status-badge";
 import {
   archiveBusiness,
   createBusiness,
@@ -94,6 +105,7 @@ function TextField({
   required,
   maxLength,
   placeholder,
+  idPrefix = "",
 }: {
   label: string;
   value: string;
@@ -103,8 +115,9 @@ function TextField({
   required?: boolean;
   maxLength?: number;
   placeholder?: string;
+  idPrefix?: string;
 }) {
-  const id = `bf-${label.toLowerCase().replace(/\s+/g, "-")}`;
+  const id = `${idPrefix}bf-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>
@@ -144,6 +157,31 @@ function formToInput(form: FormState): BusinessInput {
     address: form.address,
     notes: form.notes,
   };
+}
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * Compact, deterministic "Updated" label (e.g. "18 Jun 2026"). Uses UTC parts so
+ * the server-rendered and client-rendered strings always match (no hydration
+ * mismatch and no locale variance). Presentation only.
+ */
+function formatUpdated(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** One-line contact summary shown under the company name. */
+function contactSummary(b: Business): string {
+  const place = [b.city, b.wilaya, b.country].filter(Boolean).join(", ");
+  return (
+    [b.contactName, b.phone, b.email, place].filter(Boolean).join(" · ") ||
+    "No contact details"
+  );
 }
 
 /**
@@ -253,6 +291,55 @@ export function BusinessManager({
     });
   }
 
+  /** Per-row action buttons — identical in the desktop table and mobile cards. */
+  function rowActions(b: Business) {
+    if (archived) {
+      return (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2.5 text-muted-foreground hover:text-primary"
+          disabled={pending}
+          onClick={() => handleRestore(b.id, b.companyName)}
+        >
+          <ArchiveRestore className="mr-1 h-4 w-4" />
+          Restore
+        </Button>
+      );
+    }
+    return (
+      <>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2.5 text-muted-foreground hover:text-foreground"
+          disabled={pending}
+          onClick={() => {
+            setOpenForm(b.id);
+            setNotice(null);
+            setError(null);
+          }}
+        >
+          <Pencil className="mr-1 h-4 w-4" />
+          Edit
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2.5 text-muted-foreground hover:text-destructive"
+          disabled={pending}
+          onClick={() => handleArchive(b.id, b.companyName)}
+        >
+          <Archive className="mr-1 h-4 w-4" />
+          Archive
+        </Button>
+      </>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6">
       {error ? (
@@ -268,25 +355,37 @@ export function BusinessManager({
 
       <BusinessToolbar />
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {total} {hasFilters ? "matching " : ""}
+          <span className="font-medium text-foreground">{total}</span>{" "}
+          {hasFilters ? "matching " : ""}
           {archived ? "archived " : ""}record{total === 1 ? "" : "s"}
           {hasFilters ? "" : archived ? "" : " in this workspace"}.
         </p>
-        {!archived && openForm !== "new" ? (
-          <Button
-            type="button"
-            onClick={() => {
-              setOpenForm("new");
-              setNotice(null);
-              setError(null);
-            }}
-            disabled={pending}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            Add business
-          </Button>
+        {!archived ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href="/upload">
+                <FileUp className="mr-1 h-4 w-4" />
+                Import CSV
+              </Link>
+            </Button>
+            {openForm !== "new" ? (
+              <Button
+                type="button"
+                className="shadow-sm"
+                onClick={() => {
+                  setOpenForm("new");
+                  setNotice(null);
+                  setError(null);
+                }}
+                disabled={pending}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Add business
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -301,116 +400,181 @@ export function BusinessManager({
       ) : null}
 
       {businesses.length === 0 && openForm !== "new" ? (
-        <Card className="p-8 text-center">
+        <Card className="flex flex-col items-center gap-3 px-6 py-12 text-center">
           {hasFilters ? (
-            <p className="text-sm text-muted-foreground">
-              No {archived ? "archived " : ""}records match the current search or
-              filters.
-            </p>
+            <>
+              <SearchX className="h-8 w-8 text-muted-foreground" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  No matches
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  No {archived ? "archived " : ""}records match the current search
+                  or filters. Try adjusting or clearing them.
+                </p>
+              </div>
+            </>
           ) : archived ? (
-            <p className="text-sm text-muted-foreground">
-              No archived records. Records you archive will appear here and can be
-              restored.
-            </p>
+            <>
+              <ArchiveRestore className="h-8 w-8 text-muted-foreground" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  No archived records
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Records you archive will appear here and can be restored.
+                </p>
+              </div>
+            </>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              No business records yet. Click{" "}
-              <span className="text-foreground">Add business</span> to create the
-              first one.
-            </p>
+            <>
+              <Building2 className="h-8 w-8 text-muted-foreground" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  No business records yet
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Click <span className="text-foreground">Add business</span> to
+                  create the first one, or{" "}
+                  <span className="text-foreground">Import CSV</span> to bring in
+                  existing data.
+                </p>
+              </div>
+            </>
           )}
         </Card>
       ) : null}
 
-      <div className="flex flex-col gap-3">
-        {businesses.map((b) =>
-          !archived && openForm === b.id ? (
-            <BusinessForm
-              key={b.id}
-              title={`Edit — ${b.companyName}`}
-              submitLabel="Save"
-              initial={formFromBusiness(b)}
-              pending={pending}
-              onCancel={() => setOpenForm(null)}
-              onSubmit={(form) => handleUpdate(b.id, form)}
-            />
-          ) : (
-            <Card
-              key={b.id}
-              className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {b.companyName}
-                  </p>
-                  <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs capitalize text-muted-foreground">
-                    {b.status}
-                  </span>
-                  {b.businessType ? (
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {b.businessType}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {[b.contactName, b.phone, b.email, [b.city, b.wilaya, b.country]
-                    .filter(Boolean)
-                    .join(", ")]
-                    .filter(Boolean)
-                    .join(" · ") || "No contact details"}
-                </p>
-                {b.supportedBrands.length > 0 ? (
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    Brands: {b.supportedBrands.join(", ")}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {archived ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => handleRestore(b.id, b.companyName)}
-                  >
-                    <ArchiveRestore className="mr-1 h-4 w-4" />
-                    Restore
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => {
-                        setOpenForm(b.id);
-                        setNotice(null);
-                        setError(null);
-                      }}
+      {businesses.length > 0 ? (
+        <>
+          {/* Desktop: table layout */}
+          <div className="hidden overflow-hidden rounded-xl border border-border bg-card/40 shadow-sm md:block">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary/30 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <th className="px-5 py-3 font-semibold">Business</th>
+                  <th className="px-4 py-3 font-semibold">Brands</th>
+                  <th className="px-4 py-3 font-semibold">Type</th>
+                  <th className="px-4 py-3 font-semibold">Wilaya</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Updated</th>
+                  <th className="px-5 py-3 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {businesses.map((b) =>
+                  !archived && openForm === b.id ? (
+                    <tr key={b.id} className="border-b border-border last:border-0">
+                      <td colSpan={7} className="p-3">
+                        <BusinessForm
+                          idPrefix={`d-${b.id}-`}
+                          title={`Edit — ${b.companyName}`}
+                          submitLabel="Save"
+                          initial={formFromBusiness(b)}
+                          pending={pending}
+                          onCancel={() => setOpenForm(null)}
+                          onSubmit={(form) => handleUpdate(b.id, form)}
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr
+                      key={b.id}
+                      className="group border-b border-border align-top transition-colors last:border-0 hover:bg-secondary/30 hover:shadow-[inset_2px_0_0_0_var(--primary)]"
                     >
-                      <Pencil className="mr-1 h-4 w-4" />
-                      Edit
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => handleArchive(b.id, b.companyName)}
-                    >
-                      <Archive className="mr-1 h-4 w-4" />
-                      Archive
-                    </Button>
-                  </>
+                      <td className="max-w-xs px-5 py-3.5 align-top">
+                        <p className="truncate font-medium text-foreground">
+                          {b.companyName}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {contactSummary(b)}
+                        </p>
+                      </td>
+                      <td className="max-w-[12rem] px-4 py-3.5 align-top text-muted-foreground">
+                        <span className="line-clamp-1">
+                          {b.supportedBrands.length > 0
+                            ? b.supportedBrands.join(", ")
+                            : "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 align-top text-muted-foreground">
+                        {b.businessType || "—"}
+                      </td>
+                      <td className="px-4 py-3.5 align-top text-muted-foreground">
+                        {b.wilaya || "—"}
+                      </td>
+                      <td className="px-4 py-3.5 align-top">
+                        <StatusBadge status={b.status} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3.5 align-top text-xs text-muted-foreground">
+                        {formatUpdated(b.updatedAt)}
+                      </td>
+                      <td className="px-5 py-3 align-top">
+                        <div className="flex items-center justify-end gap-1 opacity-80 transition-opacity group-hover:opacity-100">
+                          {rowActions(b)}
+                        </div>
+                      </td>
+                    </tr>
+                  )
                 )}
-              </div>
-            </Card>
-          )
-        )}
-      </div>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: card layout */}
+          <div className="flex flex-col gap-3 md:hidden">
+            {businesses.map((b) =>
+              !archived && openForm === b.id ? (
+                <BusinessForm
+                  key={b.id}
+                  idPrefix={`m-${b.id}-`}
+                  title={`Edit — ${b.companyName}`}
+                  submitLabel="Save"
+                  initial={formFromBusiness(b)}
+                  pending={pending}
+                  onCancel={() => setOpenForm(null)}
+                  onSubmit={(form) => handleUpdate(b.id, form)}
+                />
+              ) : (
+                <Card
+                  key={b.id}
+                  className="flex flex-col gap-3 rounded-xl p-4 transition-colors hover:bg-secondary/20"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {b.companyName}
+                      </p>
+                      {b.businessType ? (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {b.businessType}
+                          {b.wilaya ? ` · ${b.wilaya}` : ""}
+                        </p>
+                      ) : b.wilaya ? (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {b.wilaya}
+                        </p>
+                      ) : null}
+                    </div>
+                    <StatusBadge status={b.status} />
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {contactSummary(b)}
+                  </p>
+                  {b.supportedBrands.length > 0 ? (
+                    <p className="truncate text-xs text-muted-foreground">
+                      Brands: {b.supportedBrands.join(", ")}
+                    </p>
+                  ) : null}
+                  <div className="flex items-center justify-end gap-1 border-t border-border pt-3">
+                    {rowActions(b)}
+                  </div>
+                </Card>
+              )
+            )}
+          </div>
+        </>
+      ) : null}
 
       <BusinessPagination page={page} pageCount={pageCount} />
     </div>
@@ -425,6 +589,7 @@ function BusinessForm({
   pending,
   onSubmit,
   onCancel,
+  idPrefix = "",
 }: {
   title: string;
   submitLabel: string;
@@ -432,6 +597,8 @@ function BusinessForm({
   pending: boolean;
   onSubmit: (form: FormState) => void;
   onCancel: () => void;
+  /** Prefix for control ids so duplicated (desktop+mobile) edit forms stay unique. */
+  idPrefix?: string;
 }) {
   const [form, setForm] = useState<FormState>(initial ?? emptyForm());
 
@@ -449,20 +616,20 @@ function BusinessForm({
       <h2 className="text-sm font-semibold text-foreground">{title}</h2>
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <TextField label="Company name" required value={form.companyName} maxLength={200} disabled={pending} onChange={(v) => set("companyName", v)} />
-          <TextField label="Contact name" value={form.contactName} disabled={pending} onChange={(v) => set("contactName", v)} />
-          <TextField label="Phone" value={form.phone} disabled={pending} onChange={(v) => set("phone", v)} />
-          <TextField label="Email" type="email" value={form.email} disabled={pending} onChange={(v) => set("email", v)} />
-          <TextField label="Website" value={form.website} disabled={pending} onChange={(v) => set("website", v)} />
-          <TextField label="Business type" value={form.businessType} disabled={pending} onChange={(v) => set("businessType", v)} placeholder="supplier, garage, importer…" />
-          <TextField label="City" value={form.city} disabled={pending} onChange={(v) => set("city", v)} />
-          <TextField label="Wilaya" value={form.wilaya} disabled={pending} onChange={(v) => set("wilaya", v)} />
-          <TextField label="Country" value={form.country} disabled={pending} onChange={(v) => set("country", v)} />
+          <TextField idPrefix={idPrefix} label="Company name" required value={form.companyName} maxLength={200} disabled={pending} onChange={(v) => set("companyName", v)} />
+          <TextField idPrefix={idPrefix} label="Contact name" value={form.contactName} disabled={pending} onChange={(v) => set("contactName", v)} />
+          <TextField idPrefix={idPrefix} label="Phone" value={form.phone} disabled={pending} onChange={(v) => set("phone", v)} />
+          <TextField idPrefix={idPrefix} label="Email" type="email" value={form.email} disabled={pending} onChange={(v) => set("email", v)} />
+          <TextField idPrefix={idPrefix} label="Website" value={form.website} disabled={pending} onChange={(v) => set("website", v)} />
+          <TextField idPrefix={idPrefix} label="Business type" value={form.businessType} disabled={pending} onChange={(v) => set("businessType", v)} placeholder="supplier, garage, importer…" />
+          <TextField idPrefix={idPrefix} label="City" value={form.city} disabled={pending} onChange={(v) => set("city", v)} />
+          <TextField idPrefix={idPrefix} label="Wilaya" value={form.wilaya} disabled={pending} onChange={(v) => set("wilaya", v)} />
+          <TextField idPrefix={idPrefix} label="Country" value={form.country} disabled={pending} onChange={(v) => set("country", v)} />
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bf-status">Status</Label>
+            <Label htmlFor={`${idPrefix}bf-status`}>Status</Label>
             <select
-              id="bf-status"
+              id={`${idPrefix}bf-status`}
               value={form.status}
               disabled={pending}
               onChange={(e) => set("status", e.target.value as BusinessStatus)}
@@ -477,9 +644,9 @@ function BusinessForm({
           </div>
 
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="bf-brands">Supported brands</Label>
+            <Label htmlFor={`${idPrefix}bf-brands`}>Supported brands</Label>
             <Input
-              id="bf-brands"
+              id={`${idPrefix}bf-brands`}
               value={form.brandsText}
               disabled={pending}
               onChange={(e) => set("brandsText", e.target.value)}
@@ -488,9 +655,9 @@ function BusinessForm({
           </div>
 
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="bf-address">Address</Label>
+            <Label htmlFor={`${idPrefix}bf-address`}>Address</Label>
             <textarea
-              id="bf-address"
+              id={`${idPrefix}bf-address`}
               value={form.address}
               disabled={pending}
               onChange={(e) => set("address", e.target.value)}
@@ -500,9 +667,9 @@ function BusinessForm({
           </div>
 
           <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="bf-notes">Notes</Label>
+            <Label htmlFor={`${idPrefix}bf-notes`}>Notes</Label>
             <textarea
-              id="bf-notes"
+              id={`${idPrefix}bf-notes`}
               value={form.notes}
               disabled={pending}
               onChange={(e) => set("notes", e.target.value)}

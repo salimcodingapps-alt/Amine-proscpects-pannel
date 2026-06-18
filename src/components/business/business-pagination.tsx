@@ -36,9 +36,10 @@ export function BusinessPagination({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
       <p className="text-sm text-muted-foreground">
-        Page {page} of {pageCount}
+        Page <span className="font-medium text-foreground">{page}</span> of{" "}
+        <span className="font-medium text-foreground">{pageCount}</span>
       </p>
       <div className="flex items-center gap-2">
         <Button

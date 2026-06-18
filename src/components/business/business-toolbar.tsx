@@ -13,9 +13,16 @@ import {
   DEFAULT_BUSINESS_SORT,
 } from "@/lib/businesses/types";
 
-/** Match the native-control styling used by BusinessManager's form fields. */
+/** Filled native-control styling for a more premium, less "admin form" feel. */
 const FIELD_CLASS =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+  "flex h-10 w-full rounded-lg border border-input bg-secondary/30 px-3 py-1 text-sm text-foreground shadow-sm transition-colors hover:bg-secondary/50 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+
+/** Small uppercase field label, premium CRM style. */
+const LABEL_CLASS =
+  "text-[11px] font-medium uppercase tracking-wide text-muted-foreground";
+
+/** Filled input styling to match the selects (passed to the Input component). */
+const INPUT_CLASS = "h-10 rounded-lg bg-secondary/30 hover:bg-secondary/50";
 
 const SEARCH_DEBOUNCE_MS = 350;
 
@@ -133,10 +140,10 @@ export function BusinessToolbar() {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card/40 p-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card/50 p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div
-          className="inline-flex rounded-md border border-input p-0.5"
+          className="inline-flex rounded-lg border border-border bg-secondary/40 p-1"
           role="group"
           aria-label="Active or archived records"
         >
@@ -144,9 +151,9 @@ export function BusinessToolbar() {
             type="button"
             onClick={() => commit({ view: "" })}
             aria-pressed={!archived}
-            className={`rounded px-3 py-1 text-sm transition-colors ${
+            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
               !archived
-                ? "bg-primary text-primary-foreground"
+                ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -156,37 +163,37 @@ export function BusinessToolbar() {
             type="button"
             onClick={() => commit({ view: "archived" })}
             aria-pressed={archived}
-            className={`rounded px-3 py-1 text-sm transition-colors ${
+            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
               archived
-                ? "bg-primary text-primary-foreground"
+                ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Archived
           </button>
         </div>
-      </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+        <div className="relative w-full sm:w-60 md:w-72">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, contact, phone, email, city, wilaya, type, notes…"
-            className="pl-9"
+            placeholder="Quick find…"
+            className="h-9 rounded-lg bg-secondary/30 pl-9 pr-9 hover:bg-secondary/50"
             aria-label="Search businesses"
           />
+          {isPending ? (
+            <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          ) : null}
         </div>
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-4 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bt-status">Status</Label>
+          <Label htmlFor="bt-status" className={LABEL_CLASS}>
+            Status
+          </Label>
           <select
             id="bt-status"
             value={status}
@@ -203,37 +210,48 @@ export function BusinessToolbar() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bt-wilaya">Wilaya</Label>
+          <Label htmlFor="bt-wilaya" className={LABEL_CLASS}>
+            Wilaya
+          </Label>
           <Input
             id="bt-wilaya"
             value={wilaya}
             onChange={(e) => setWilaya(e.target.value)}
             placeholder="e.g. Alger"
+            className={INPUT_CLASS}
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bt-type">Business type</Label>
+          <Label htmlFor="bt-type" className={LABEL_CLASS}>
+            Business type
+          </Label>
           <Input
             id="bt-type"
             value={type}
             onChange={(e) => setType(e.target.value)}
             placeholder="e.g. supplier"
+            className={INPUT_CLASS}
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bt-brand">Supported brand</Label>
+          <Label htmlFor="bt-brand" className={LABEL_CLASS}>
+            Supported brand
+          </Label>
           <Input
             id="bt-brand"
             value={brand}
             onChange={(e) => setBrand(e.target.value)}
             placeholder="e.g. Renault"
+            className={INPUT_CLASS}
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bt-sort">Sort by</Label>
+          <Label htmlFor="bt-sort" className={LABEL_CLASS}>
+            Sort by
+          </Label>
           <select
             id="bt-sort"
             value={sort}
@@ -250,7 +268,7 @@ export function BusinessToolbar() {
       </div>
 
       {hasActiveFilters ? (
-        <div>
+        <div className="flex justify-end">
           <Button type="button" variant="ghost" size="sm" onClick={clearAll}>
             <X className="mr-1 h-4 w-4" />
             Clear filters
