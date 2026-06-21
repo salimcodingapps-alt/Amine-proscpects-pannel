@@ -23,7 +23,7 @@
   --popover: #171717;
   --popover-foreground: #ffffff;
 
-  --primary: #f4c430; /* Primary Accent (gold) */
+  --primary: #f5b900; /* Primary Accent (gold) */
   --primary-foreground: #0a0a0a; /* dark text on gold for contrast */
 
   --secondary: #1f1f1f;
@@ -44,7 +44,7 @@
 
   --border: #262626;
   --input: #262626;
-  --ring: #f4c430;
+  --ring: #f5b900;
 }
 
 /* Mirror the palette under `.dark` so shadcn dark-variant components resolve identically. */
@@ -56,7 +56,7 @@
   --card-foreground: #ffffff;
   --popover: #171717;
   --popover-foreground: #ffffff;
-  --primary: #f4c430;
+  --primary: #f5b900;
   --primary-foreground: #0a0a0a;
   --secondary: #1f1f1f;
   --secondary-foreground: #ffffff;
@@ -71,7 +71,7 @@
   --brand-secondary: #c89b2d;
   --border: #262626;
   --input: #262626;
-  --ring: #f4c430;
+  --ring: #f5b900;
 }
 
 /* Expose tokens to Tailwind utilities (bg-background, text-muted-foreground, border-border, ...). */
