@@ -1,53 +1,52 @@
 import { PageHeader } from "@/components/layout/page-header";
+import { Placeholder } from "@/components/layout/placeholder";
+import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
+import { createClient } from "@/lib/supabase/server";
+import { getWorkspaceDashboardStats } from "@/lib/businesses/queries";
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+  listMyWorkspaces,
+  resolveActiveWorkspace,
+} from "@/lib/workspace/queries";
 
 /**
- * Dashboard shell. Stat cards are intentionally static placeholders —
- * real figures arrive once the database, uploads, and duplicate systems
- * exist (Blocks 4–9). This block only proves layout and styling.
+ * Dashboard — read-only CRM overview for the active workspace (Block 11).
+ * Mirrors /database's auth + workspace resolution, then renders real metrics
+ * computed by getWorkspaceDashboardStats. Dynamic (resolves auth/workspace at
+ * request time), like the other (app) data pages.
  */
-const stats = [
-  { label: "Total Businesses", value: "—" },
-  { label: "Customers", value: "—" },
-  { label: "Not Contacted", value: "—" },
-  { label: "Duplicates", value: "—" },
-  { label: "Needs Review", value: "—" },
-  { label: "Recent Uploads", value: "—" },
-];
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-export default function DashboardPage() {
+  // The (app) layout already guards auth; this is a defensive fallback.
+  if (!user) {
+    return (
+      <div className="flex min-h-full flex-col">
+        <PageHeader title="Dashboard" />
+      </div>
+    );
+  }
+
+  const workspaces = await listMyWorkspaces(supabase, user.id);
+  const active = await resolveActiveWorkspace(workspaces);
+
+  let content;
+  if (active) {
+    const stats = await getWorkspaceDashboardStats(supabase, active.id);
+    content = <DashboardOverview key={active.id} stats={stats} />;
+  } else {
+    content = <Placeholder block="No workspace found for your account." />;
+  }
+
   return (
-    <div className="flex flex-col">
+    <div className="flex min-h-full flex-col">
       <PageHeader
         title="Dashboard"
         description="Overview of your automotive supplier database."
       />
-      <div className="p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {stats.map((stat) => (
-            <Card key={stat.label}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {stat.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <span className="text-3xl font-semibold tracking-tight text-foreground">
-                  {stat.value}
-                </span>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <p className="mt-6 text-xs text-muted-foreground">
-          Placeholder metrics — populated once data import is implemented.
-        </p>
-      </div>
+      {content}
     </div>
   );
 }

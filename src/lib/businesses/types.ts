@@ -226,3 +226,43 @@ export interface MergeResult {
   /** Set on a whole-request failure or a clean abort before any write. */
   error?: string;
 }
+
+/** ----------------------------------------------------------------------------
+ * Block 11 — Dashboard metrics (read-only overview)
+ * --------------------------------------------------------------------------- */
+
+/** A label with an occurrence count — used for the top-wilaya / top-brand lists. */
+export interface ValueCount {
+  label: string;
+  count: number;
+}
+
+/** Active-record count for each of the four business statuses. */
+export type StatusCounts = Record<BusinessStatus, number>;
+
+/**
+ * Read-only metrics for the dashboard overview, scoped to one workspace.
+ *
+ * `activeTotal`, `archivedTotal`, and `statusCounts` are EXACT (computed with
+ * head-only `count` queries — no rows transferred). `topWilayas` / `topBrands`
+ * are aggregated in-app from a capped scan of active rows: `topCapped` is true
+ * when the cap was hit (so the lists may be incomplete) and `topScanned` is how
+ * many active rows were actually examined. Nothing here writes to the database.
+ */
+export interface WorkspaceDashboardStats {
+  /** Active (not soft-deleted) records — equals the sum of statusCounts. */
+  activeTotal: number;
+  /** Soft-deleted (archived) records. */
+  archivedTotal: number;
+  statusCounts: StatusCounts;
+  /** Most common wilayas among scanned active rows (desc by count). */
+  topWilayas: ValueCount[];
+  /** Most common supported brands among scanned active rows (desc by count). */
+  topBrands: ValueCount[];
+  /** True when the top-list scan hit the cap, so those lists may be incomplete. */
+  topCapped: boolean;
+  /** Number of active rows scanned for the top lists (<= cap). */
+  topScanned: number;
+  /** A few most-recently-updated active records, newest first. */
+  recentlyUpdated: Business[];
+}
