@@ -21,6 +21,7 @@ import { Card } from "@/components/ui/card";
 import { BusinessToolbar } from "@/components/business/business-toolbar";
 import { BusinessPagination } from "@/components/business/business-pagination";
 import { StatusBadge } from "@/components/business/status-badge";
+import { BrandChips } from "@/components/business/brand-logo-chip";
 import {
   archiveBusiness,
   createBusiness,
@@ -490,12 +491,8 @@ export function BusinessManager({
                           {contactSummary(b)}
                         </p>
                       </td>
-                      <td className="max-w-[12rem] px-4 py-3.5 align-top text-muted-foreground">
-                        <span className="line-clamp-1">
-                          {b.supportedBrands.length > 0
-                            ? b.supportedBrands.join(", ")
-                            : "—"}
-                        </span>
+                      <td className="max-w-[14rem] px-4 py-3.5 align-top text-muted-foreground">
+                        <BrandChips brands={b.supportedBrands} max={3} nowrap />
                       </td>
                       <td className="px-4 py-3.5 align-top text-muted-foreground">
                         {b.businessType || "—"}
@@ -562,9 +559,7 @@ export function BusinessManager({
                     {contactSummary(b)}
                   </p>
                   {b.supportedBrands.length > 0 ? (
-                    <p className="truncate text-xs text-muted-foreground">
-                      Brands: {b.supportedBrands.join(", ")}
-                    </p>
+                    <BrandChips brands={b.supportedBrands} max={6} />
                   ) : null}
                   <div className="flex items-center justify-end gap-1 border-t border-border pt-3">
                     {rowActions(b)}

@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StatusBadge } from "@/components/business/status-badge";
+import { BrandLogoChip } from "@/components/business/brand-logo-chip";
 import {
   BUSINESS_STATUSES,
   type ValueCount,
@@ -83,11 +84,14 @@ function RankedList({
   icon: Icon,
   items,
   emptyLabel,
+  renderLabel,
 }: {
   title: string;
   icon: typeof MapPin;
   items: ValueCount[];
   emptyLabel: string;
+  /** Optional custom label renderer (e.g. brand chips); defaults to plain text. */
+  renderLabel?: (label: string) => React.ReactNode;
 }) {
   const max = items.length > 0 ? items[0].count : 0;
   return (
@@ -104,7 +108,9 @@ function RankedList({
             {items.map((item) => (
               <li key={item.label}>
                 <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="truncate text-foreground">{item.label}</span>
+                  <span className="min-w-0 truncate text-foreground">
+                    {renderLabel ? renderLabel(item.label) : item.label}
+                  </span>
                   <span className="shrink-0 tabular-nums text-muted-foreground">
                     {item.count.toLocaleString()}
                   </span>
@@ -186,6 +192,7 @@ export function DashboardOverview({
           icon={Tag}
           items={topBrands}
           emptyLabel="No brand data yet."
+          renderLabel={(label) => <BrandLogoChip brand={label} />}
         />
       </div>
 
