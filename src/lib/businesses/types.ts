@@ -101,6 +101,12 @@ export interface BusinessListFilters {
    * active ones. Absent/false = active records only (the default, unchanged).
    */
   archived?: boolean;
+  /**
+   * Block 14: restrict the result to this set of business ids (e.g. the
+   * watchlisted ids). When provided AND empty, the result is empty. When absent
+   * (undefined), no id restriction is applied (the default, unchanged).
+   */
+  onlyIds?: string[];
 }
 
 /** Paginated result returned by listBusinesses. */

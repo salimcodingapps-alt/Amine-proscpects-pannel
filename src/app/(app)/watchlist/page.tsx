@@ -23,7 +23,14 @@ function firstParam(value: string | string[] | undefined): string {
   return value ?? "";
 }
 
-export default async function DatabasePage({
+/**
+ * Block 14 — Watchlist page. Reuses the exact /database flow (toolbar +
+ * BusinessManager) but restricts the business query to the workspace's shared
+ * watchlist via listBusinesses' `onlyIds` filter, so search/filter/sort/pagination
+ * all work, scoped to watchlisted records. Active by default; ?view=archived shows
+ * archived watchlisted records.
+ */
+export default async function WatchlistPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -33,11 +40,10 @@ export default async function DatabasePage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // The (app) layout already guards auth; this is a defensive fallback.
   if (!user) {
     return (
       <div className="flex min-h-full flex-col">
-        <PageHeader title="Database" />
+        <PageHeader title="Watchlist" />
       </div>
     );
   }
@@ -45,8 +51,6 @@ export default async function DatabasePage({
   const workspaces = await listMyWorkspaces(supabase, user.id);
   const active = await resolveActiveWorkspace(workspaces);
 
-  // Parse the URL search params into typed, validated filters. Invalid values
-  // are dropped (status must be a known enum; sort falls back to the default).
   const sp = await searchParams;
   const search = firstParam(sp.q);
   const statusRaw = firstParam(sp.status);
@@ -61,8 +65,6 @@ export default async function DatabasePage({
     ? (sortRaw as BusinessSort)
     : undefined;
   const pageNum = Math.max(1, Number.parseInt(firstParam(sp.page), 10) || 1);
-  // Block 9: ?view=archived lists soft-deleted records (restore view). Any other
-  // value (or none) keeps the default active-records view.
   const archived = firstParam(sp.view) === "archived";
 
   const hasFilters = Boolean(
@@ -75,26 +77,20 @@ export default async function DatabasePage({
 
   let content;
   if (active) {
-    const [result, watchlistedIds] = await Promise.all([
-      listBusinesses(supabase, active.id, {
-        search,
-        status,
-        wilaya,
-        businessType,
-        brand,
-        sort,
-        page: pageNum,
-        archived,
-      }),
-      // Block 14: mark which visible rows are on the shared watchlist (the star).
-      archived
-        ? Promise.resolve<string[]>([])
-        : listWorkspaceWatchlistIds(supabase, active.id),
-    ]);
+    const watchlistedIds = await listWorkspaceWatchlistIds(supabase, active.id);
+    const result = await listBusinesses(supabase, active.id, {
+      search,
+      status,
+      wilaya,
+      businessType,
+      brand,
+      sort,
+      page: pageNum,
+      archived,
+      onlyIds: watchlistedIds,
+    });
     content = (
       <BusinessManager
-        // Remount when the active workspace OR view changes so any open form and
-        // its local state reset to the newly-selected context.
         key={`${active.id}:${archived ? "archived" : "active"}`}
         workspaceId={active.id}
         businesses={result.items}
@@ -103,6 +99,7 @@ export default async function DatabasePage({
         pageCount={result.pageCount}
         hasFilters={hasFilters}
         archived={archived}
+        watchlist
         watchlistedIds={watchlistedIds}
       />
     );
@@ -113,8 +110,8 @@ export default async function DatabasePage({
   return (
     <div className="flex min-h-full flex-col">
       <PageHeader
-        title="Database"
-        description="Manage your automotive business records."
+        title="Watchlist"
+        description="Businesses your team has starred for follow-up."
       />
       {content}
     </div>

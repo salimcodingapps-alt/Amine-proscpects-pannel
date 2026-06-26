@@ -12,6 +12,7 @@ import {
   FileUp,
   Building2,
   SearchX,
+  Star,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { BusinessToolbar } from "@/components/business/business-toolbar";
 import { BusinessPagination } from "@/components/business/business-pagination";
 import { StatusBadge } from "@/components/business/status-badge";
 import { BrandChips } from "@/components/business/brand-logo-chip";
+import { WatchlistButton } from "@/components/business/watchlist-button";
 import {
   archiveBusiness,
   createBusiness,
@@ -202,6 +204,8 @@ export function BusinessManager({
   pageCount,
   hasFilters,
   archived = false,
+  watchlist = false,
+  watchlistedIds = [],
 }: {
   workspaceId: string;
   businesses: Business[];
@@ -214,7 +218,12 @@ export function BusinessManager({
   hasFilters: boolean;
   /** Block 9: archived (restore) view vs the default active view. */
   archived?: boolean;
+  /** Block 14: watchlist page mode (hides Add/Import; watchlist-aware copy). */
+  watchlist?: boolean;
+  /** Block 14: ids on the shared watchlist, for the per-row star state. */
+  watchlistedIds?: string[];
 }) {
+  const watchlistedSet = new Set(watchlistedIds);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -311,6 +320,11 @@ export function BusinessManager({
     }
     return (
       <>
+        <WatchlistButton
+          workspaceId={workspaceId}
+          businessId={b.id}
+          watchlisted={watchlistedSet.has(b.id)}
+        />
         <Button
           type="button"
           variant="ghost"
@@ -360,10 +374,11 @@ export function BusinessManager({
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{total}</span>{" "}
           {hasFilters ? "matching " : ""}
-          {archived ? "archived " : ""}record{total === 1 ? "" : "s"}
-          {hasFilters ? "" : archived ? "" : " in this workspace"}.
+          {archived ? "archived " : watchlist ? "watchlisted " : ""}record
+          {total === 1 ? "" : "s"}
+          {hasFilters ? "" : archived || watchlist ? "" : " in this workspace"}.
         </p>
-        {!archived ? (
+        {!archived && !watchlist ? (
           <div className="flex shrink-0 items-center gap-2">
             <Button asChild variant="outline">
               <Link href="/upload">
@@ -424,6 +439,22 @@ export function BusinessManager({
                 </p>
                 <p className="text-sm text-muted-foreground">
                   Records you archive will appear here and can be restored.
+                </p>
+              </div>
+            </>
+          ) : watchlist ? (
+            <>
+              <Star className="h-8 w-8 text-muted-foreground" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  No watchlisted businesses yet
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Star records in{" "}
+                  <Link href="/database" className="text-foreground hover:text-primary">
+                    Database
+                  </Link>{" "}
+                  to add them to the shared watchlist.
                 </p>
               </div>
             </>
