@@ -15,6 +15,24 @@ function str(formData: FormData, key: string) {
   return typeof v === "string" ? v.trim() : "";
 }
 
+/**
+ * Post-auth redirect target. Only INTERNAL, non-protocol-relative paths are
+ * allowed (open-redirect guard): must start with a single "/", never "//" or
+ * "/\". Anything else falls back to /dashboard. Used to return an invited user
+ * to /invite/<token> after they sign in or sign up.
+ */
+function safeNext(formData: FormData): string {
+  const next = str(formData, "next");
+  if (
+    next.startsWith("/") &&
+    !next.startsWith("//") &&
+    !next.startsWith("/\\")
+  ) {
+    return next;
+  }
+  return "/dashboard";
+}
+
 async function getOrigin() {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
@@ -36,7 +54,7 @@ export async function signIn(
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { error: error.message };
 
-  redirect("/dashboard");
+  redirect(safeNext(formData));
 }
 
 export async function signUp(
@@ -62,7 +80,7 @@ export async function signUp(
 
   // Email confirmation is disabled in dev, so a session is established
   // immediately and the user can proceed straight to the app.
-  redirect("/dashboard");
+  redirect(safeNext(formData));
 }
 
 export async function signOut(): Promise<void> {

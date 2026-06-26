@@ -31,3 +31,42 @@ export interface WorkspaceActionResult {
   /** Set by createWorkspace with the new workspace id. */
   id?: string;
 }
+
+// --- Block 13: invites -------------------------------------------------------
+
+export type InviteStatus = "pending" | "accepted" | "revoked";
+
+/**
+ * Roles an invite may grant. Owners and managers can both invite, but ONLY as
+ * member/manager — nobody can invite an 'owner' (ownership transfer is deferred).
+ * Enforced in the action, the INSERT policy, and a table CHECK.
+ */
+export const INVITABLE_ROLES: WorkspaceRole[] = ["member", "manager"];
+
+/** A pending invite row shown to owners/managers in Settings. */
+export interface PendingInvite {
+  id: string;
+  email: string;
+  role: WorkspaceRole;
+  createdAt: string;
+  expiresAt: string;
+  /** Derived: pending but past its expiry (no background job flips it). */
+  expired: boolean;
+}
+
+/**
+ * Result of creating an invite. `link` is the full accept URL containing the
+ * RAW token — it is returned exactly ONCE (only the SHA-256 hash is stored), so
+ * the UI must surface it immediately for the inviter to copy.
+ */
+export interface CreateInviteResult {
+  error?: string;
+  link?: string;
+}
+
+/** Result of accepting an invite. */
+export interface AcceptInviteResult {
+  error?: string;
+  /** The workspace the caller just joined (set active on success). */
+  workspaceId?: string;
+}

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { InvitePanel } from "@/components/workspace/invite-panel";
 import {
   removeMember,
   renameWorkspace,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/workspace/actions";
 import {
   WORKSPACE_ROLES,
+  type PendingInvite,
   type WorkspaceMember,
   type WorkspaceRole,
 } from "@/lib/workspace/types";
@@ -30,15 +32,19 @@ export function WorkspaceSettings({
   workspaceName,
   myRole,
   members,
+  invites,
 }: {
   workspaceId: string;
   workspaceName: string;
   myRole: WorkspaceRole;
   members: WorkspaceMember[];
+  /** Block 13: pending invites (owner/manager only; empty otherwise). */
+  invites: PendingInvite[];
 }) {
   const router = useRouter();
   const canRename = myRole === "owner" || myRole === "manager";
   const canManageMembers = myRole === "owner";
+  const canInvite = myRole === "owner" || myRole === "manager";
 
   const [name, setName] = useState(workspaceName);
   const [error, setError] = useState<string | null>(null);
@@ -197,13 +203,11 @@ export function WorkspaceSettings({
             </li>
           ))}
         </ul>
-        {canManageMembers ? (
-          <p className="mt-4 text-xs text-muted-foreground">
-            Inviting new members arrives in a later block. For now, members are
-            provisioned automatically on sign-up.
-          </p>
-        ) : null}
       </Card>
+
+      {canInvite ? (
+        <InvitePanel workspaceId={workspaceId} invites={invites} />
+      ) : null}
     </div>
   );
 }

@@ -5,7 +5,12 @@ import { LoginIntro } from "@/components/auth/login-intro";
 
 export const metadata: Metadata = { title: "Log in — Automotive BI CRM" };
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
   return (
     <LoginIntro>
       <div className="flex flex-col gap-6">
@@ -15,7 +20,7 @@ export default function LoginPage() {
             Log in to your supplier intelligence workspace.
           </p>
         </div>
-        <LoginForm />
+        <LoginForm next={next} />
       </div>
     </LoginIntro>
   );

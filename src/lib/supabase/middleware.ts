@@ -4,7 +4,15 @@ import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 
 /** Paths reachable without a session (no redirect to /login). */
-const PUBLIC_PATHS = ["/login", "/signup", "/reset-password", "/update-password"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/reset-password",
+  "/update-password",
+  // Block 13: the invite-accept page must render for logged-out invitees so it
+  // can prompt them to sign in/up. It does its own auth handling before accept.
+  "/invite",
+];
 
 /**
  * Auth pages an *already-authenticated* user should be bounced away from.

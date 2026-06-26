@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type {
+  PendingInvite,
   WorkspaceMember,
   WorkspaceRole,
   WorkspaceSummary,
@@ -94,6 +95,45 @@ export async function listWorkspaceMembers(
       role: r.role,
       isSelf,
       email: isSelf ? currentUserEmail : null,
+    };
+  });
+}
+
+/**
+ * List PENDING invites for a workspace (Block 13). RLS restricts this to owners/
+ * managers of the workspace, so a non-admin simply gets an empty list. The raw
+ * token/link is intentionally NOT recoverable here (only its hash is stored) —
+ * the link is shown once at creation. `expired` is derived from `expires_at`.
+ */
+export async function listPendingInvites(
+  supabase: SupabaseClient,
+  workspaceId: string
+): Promise<PendingInvite[]> {
+  const { data, error } = await supabase
+    .from("workspace_invites")
+    .select("id, email, role, created_at, expires_at")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+
+  const now = Date.now();
+  return data.map((row) => {
+    const r = row as {
+      id: string;
+      email: string;
+      role: WorkspaceRole;
+      created_at: string;
+      expires_at: string;
+    };
+    return {
+      id: r.id,
+      email: r.email,
+      role: r.role,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at,
+      expired: new Date(r.expires_at).getTime() < now,
     };
   });
 }

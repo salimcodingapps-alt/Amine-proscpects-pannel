@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormAlert, SubmitButton } from "@/components/auth/auth-form";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: string }) {
   const [state, formAction] = useActionState<AuthState, FormData>(signIn, {});
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       <FormAlert error={state.error} />
       <div className="flex flex-col gap-2">
         <Label htmlFor="email">Email</Label>
@@ -46,7 +47,10 @@ export function LoginForm() {
       <SubmitButton>Log in</SubmitButton>
       <p className="text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}
-        <Link href="/signup" className="text-primary hover:underline">
+        <Link
+          href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
+          className="text-primary hover:underline"
+        >
           Sign up
         </Link>
       </p>

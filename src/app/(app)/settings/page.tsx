@@ -4,6 +4,7 @@ import { WorkspaceSettings } from "@/components/workspace/workspace-settings";
 import { createClient } from "@/lib/supabase/server";
 import {
   listMyWorkspaces,
+  listPendingInvites,
   listWorkspaceMembers,
   resolveActiveWorkspace,
 } from "@/lib/workspace/queries";
@@ -46,6 +47,11 @@ export default async function SettingsPage() {
             user.id,
             user.email ?? null
           )}
+          invites={
+            active.role === "owner" || active.role === "manager"
+              ? await listPendingInvites(supabase, active.id)
+              : []
+          }
         />
       ) : (
         <Placeholder block="No workspace found for your account." />

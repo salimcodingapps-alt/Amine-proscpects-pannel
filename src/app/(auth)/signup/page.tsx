@@ -4,7 +4,12 @@ import { SignupForm } from "@/components/auth/signup-form";
 
 export const metadata: Metadata = { title: "Sign up — Automotive BI CRM" };
 
-export default function SignupPage() {
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await searchParams;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -15,7 +20,7 @@ export default function SignupPage() {
           Start building your automotive supplier database.
         </p>
       </div>
-      <SignupForm />
+      <SignupForm next={next} />
     </div>
   );
 }
