@@ -6,9 +6,14 @@ import { useRouter } from "next/navigation";
 import { setContactStatus } from "@/lib/businesses/actions";
 import { CONTACT_STATUSES, type ContactStatus } from "@/lib/businesses/types";
 
-/** Compact native-select styling, matching the toolbar's filled controls. */
+/**
+ * Native-select styling, matching the toolbar's filled controls. Uses a min-width
+ * (not max-width) so the longest label — "Not contacted" / "Not interested" — is
+ * never clipped, and extra right padding (pr-9) so the text never collides with
+ * the native dropdown arrow.
+ */
 const SELECT_CLASS =
-  "h-8 w-full max-w-[10.5rem] rounded-md border border-input bg-secondary/30 px-2 text-xs text-foreground shadow-sm transition-colors hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
+  "h-8 w-full min-w-[12.5rem] rounded-md border border-input bg-secondary/30 pl-3 pr-9 text-xs text-foreground shadow-sm transition-colors hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50";
 
 /**
  * Per-row contact-status quick editor (Block 15). A plain compact <select> that

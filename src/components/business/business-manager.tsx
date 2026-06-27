@@ -186,12 +186,31 @@ function formatUpdated(iso: string): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-/** One-line contact summary shown under the company name. */
+/**
+ * Secondary contact details shown below the company name + phone line. Phone is
+ * intentionally EXCLUDED here (it gets its own dedicated line via PhoneLine, so
+ * it isn't duplicated). Returns "" when there are no other details, so the caller
+ * can omit the line entirely. Presentation only.
+ */
 function contactSummary(b: Business): string {
   const place = [b.city, b.wilaya, b.country].filter(Boolean).join(", ");
+  return [b.contactName, b.email, place].filter(Boolean).join(" · ");
+}
+
+/**
+ * Phone value for its dedicated Phone column / card field (Block 15.5). Plain,
+ * non-clickable text with tabular numbers so phone numbers line up and scan
+ * easily; a muted "No phone" placeholder when absent. Presentation only.
+ */
+function PhoneValue({ phone }: { phone: string | null }) {
+  const value = phone?.trim();
+  if (!value) {
+    return (
+      <span className="text-xs italic text-muted-foreground/70">No phone</span>
+    );
+  }
   return (
-    [b.contactName, b.phone, b.email, place].filter(Boolean).join(" · ") ||
-    "No contact details"
+    <span className="text-xs tabular-nums text-foreground/90">{value}</span>
   );
 }
 
@@ -337,16 +356,17 @@ export function BusinessManager({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 px-2.5 text-muted-foreground hover:text-foreground"
+          className="h-8 px-2 text-muted-foreground hover:text-foreground"
           disabled={pending}
+          aria-label="Edit"
+          title="Edit"
           onClick={() => {
             setOpenForm(b.id);
             setNotice(null);
             setError(null);
           }}
         >
-          <Pencil className="mr-1 h-4 w-4" />
-          Edit
+          <Pencil className="h-4 w-4" />
         </Button>
         <Button
           type="button"
@@ -487,18 +507,23 @@ export function BusinessManager({
 
       {businesses.length > 0 ? (
         <>
-          {/* Desktop: table layout */}
-          <div className="hidden overflow-hidden rounded-xl border border-border bg-card/40 shadow-sm md:block">
-            <table className="w-full border-collapse text-sm">
+          {/* Desktop: table layout. The container scrolls horizontally and the
+              table keeps a minimum width so columns (esp. the Contact dropdown)
+              are never compressed/clipped on narrower desktops. */}
+          <div className="hidden overflow-x-auto rounded-xl border border-border bg-card/40 shadow-sm md:block">
+            <table className="w-full min-w-[72rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border bg-secondary/30 text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                   <th className="px-5 py-3 font-semibold">Business</th>
+                  <th className="px-4 py-3 font-semibold">Phone</th>
                   <th className="px-4 py-3 font-semibold">Brands</th>
                   <th className="px-4 py-3 font-semibold">Type</th>
                   <th className="px-4 py-3 font-semibold">Wilaya</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
                   {!archived ? (
-                    <th className="px-4 py-3 font-semibold">Contact</th>
+                    <th className="min-w-[13rem] px-4 py-3 font-semibold">
+                      Contact
+                    </th>
                   ) : null}
                   <th className="px-4 py-3 font-semibold">Updated</th>
                   <th className="px-5 py-3 text-right font-semibold">Actions</th>
@@ -508,8 +533,8 @@ export function BusinessManager({
                 {businesses.map((b) =>
                   !archived && openForm === b.id ? (
                     <tr key={b.id} className="border-b border-border last:border-0">
-                      {/* Active view always has 8 columns (Contact column shown). */}
-                      <td colSpan={8} className="p-3">
+                      {/* Active view always has 9 columns (Phone + Contact shown). */}
+                      <td colSpan={9} className="p-3">
                         <BusinessForm
                           idPrefix={`d-${b.id}-`}
                           title={`Edit — ${b.companyName}`}
@@ -530,9 +555,14 @@ export function BusinessManager({
                         <p className="truncate font-medium text-foreground">
                           {b.companyName}
                         </p>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {contactSummary(b)}
-                        </p>
+                        {contactSummary(b) ? (
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {contactSummary(b)}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3.5 align-top">
+                        <PhoneValue phone={b.phone} />
                       </td>
                       <td className="max-w-[14rem] px-4 py-3.5 align-top text-muted-foreground">
                         <BrandChips brands={b.supportedBrands} max={3} nowrap />
@@ -547,7 +577,7 @@ export function BusinessManager({
                         <StatusBadge status={b.status} />
                       </td>
                       {!archived ? (
-                        <td className="px-4 py-3.5 align-top">
+                        <td className="min-w-[13rem] px-4 py-3.5 align-top">
                           <ContactStatusSelect
                             workspaceId={workspaceId}
                             businessId={b.id}
@@ -607,9 +637,17 @@ export function BusinessManager({
                     </div>
                     <StatusBadge status={b.status} />
                   </div>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {contactSummary(b)}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Phone
+                    </span>
+                    <PhoneValue phone={b.phone} />
+                  </div>
+                  {contactSummary(b) ? (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {contactSummary(b)}
+                    </p>
+                  ) : null}
                   {b.supportedBrands.length > 0 ? (
                     <BrandChips brands={b.supportedBrands} max={6} />
                   ) : null}
