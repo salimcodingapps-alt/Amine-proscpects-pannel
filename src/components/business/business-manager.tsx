@@ -24,6 +24,7 @@ import { BusinessPagination } from "@/components/business/business-pagination";
 import { StatusBadge } from "@/components/business/status-badge";
 import { BrandChips } from "@/components/business/brand-logo-chip";
 import { WatchlistButton } from "@/components/business/watchlist-button";
+import { ContactStatusSelect } from "@/components/business/contact-status-select";
 import {
   archiveBusiness,
   createBusiness,
@@ -32,9 +33,12 @@ import {
 } from "@/lib/businesses/actions";
 import {
   BUSINESS_STATUSES,
+  CONTACT_STATUSES,
+  DEFAULT_CONTACT_STATUS,
   type Business,
   type BusinessInput,
   type BusinessStatus,
+  type ContactStatus,
 } from "@/lib/businesses/types";
 
 /** Shared styling for native select/textarea so they match the Input component. */
@@ -53,6 +57,7 @@ interface FormState {
   wilaya: string;
   country: string;
   status: BusinessStatus;
+  contactStatus: ContactStatus;
   brandsText: string;
   address: string;
   notes: string;
@@ -70,6 +75,7 @@ function emptyForm(): FormState {
     wilaya: "",
     country: "Algeria",
     status: "new",
+    contactStatus: DEFAULT_CONTACT_STATUS,
     brandsText: "",
     address: "",
     notes: "",
@@ -88,6 +94,7 @@ function formFromBusiness(b: Business): FormState {
     wilaya: b.wilaya ?? "",
     country: b.country ?? "Algeria",
     status: b.status,
+    contactStatus: b.contactStatus,
     brandsText: b.supportedBrands.join(", "),
     address: b.address ?? "",
     notes: b.notes ?? "",
@@ -153,6 +160,7 @@ function formToInput(form: FormState): BusinessInput {
     wilaya: form.wilaya,
     country: form.country,
     status: form.status,
+    contactStatus: form.contactStatus,
     supportedBrands: form.brandsText
       .split(",")
       .map((s) => s.trim())
@@ -489,6 +497,9 @@ export function BusinessManager({
                   <th className="px-4 py-3 font-semibold">Type</th>
                   <th className="px-4 py-3 font-semibold">Wilaya</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
+                  {!archived ? (
+                    <th className="px-4 py-3 font-semibold">Contact</th>
+                  ) : null}
                   <th className="px-4 py-3 font-semibold">Updated</th>
                   <th className="px-5 py-3 text-right font-semibold">Actions</th>
                 </tr>
@@ -497,7 +508,8 @@ export function BusinessManager({
                 {businesses.map((b) =>
                   !archived && openForm === b.id ? (
                     <tr key={b.id} className="border-b border-border last:border-0">
-                      <td colSpan={7} className="p-3">
+                      {/* Active view always has 8 columns (Contact column shown). */}
+                      <td colSpan={8} className="p-3">
                         <BusinessForm
                           idPrefix={`d-${b.id}-`}
                           title={`Edit — ${b.companyName}`}
@@ -534,6 +546,15 @@ export function BusinessManager({
                       <td className="px-4 py-3.5 align-top">
                         <StatusBadge status={b.status} />
                       </td>
+                      {!archived ? (
+                        <td className="px-4 py-3.5 align-top">
+                          <ContactStatusSelect
+                            workspaceId={workspaceId}
+                            businessId={b.id}
+                            contactStatus={b.contactStatus}
+                          />
+                        </td>
+                      ) : null}
                       <td className="whitespace-nowrap px-4 py-3.5 align-top text-xs text-muted-foreground">
                         {formatUpdated(b.updatedAt)}
                       </td>
@@ -591,6 +612,18 @@ export function BusinessManager({
                   </p>
                   {b.supportedBrands.length > 0 ? (
                     <BrandChips brands={b.supportedBrands} max={6} />
+                  ) : null}
+                  {!archived ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Contact
+                      </span>
+                      <ContactStatusSelect
+                        workspaceId={workspaceId}
+                        businessId={b.id}
+                        contactStatus={b.contactStatus}
+                      />
+                    </div>
                   ) : null}
                   <div className="flex items-center justify-end gap-1 border-t border-border pt-3">
                     {rowActions(b)}
@@ -664,6 +697,25 @@ function BusinessForm({
               {BUSINESS_STATUSES.map((s) => (
                 <option key={s} value={s} className="capitalize">
                   {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`${idPrefix}bf-contact-status`}>Contact status</Label>
+            <select
+              id={`${idPrefix}bf-contact-status`}
+              value={form.contactStatus}
+              disabled={pending}
+              onChange={(e) =>
+                set("contactStatus", e.target.value as ContactStatus)
+              }
+              className={`${FIELD_CLASS} h-9`}
+            >
+              {CONTACT_STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
                 </option>
               ))}
             </select>

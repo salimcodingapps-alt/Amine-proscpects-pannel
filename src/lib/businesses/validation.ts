@@ -8,7 +8,12 @@
  */
 
 import { normalizeBrandList } from "@/lib/businesses/brands";
-import { BUSINESS_STATUSES, type BusinessInput } from "@/lib/businesses/types";
+import {
+  BUSINESS_STATUSES,
+  CONTACT_STATUS_VALUES,
+  DEFAULT_CONTACT_STATUS,
+  type BusinessInput,
+} from "@/lib/businesses/types";
 
 export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,6 +54,12 @@ export function buildValues(
     return { error: "Invalid status." };
   }
 
+  // Block 15: separate outreach status; defaults to 'not_contacted'.
+  const contactStatus = input.contactStatus ?? DEFAULT_CONTACT_STATUS;
+  if (!CONTACT_STATUS_VALUES.includes(contactStatus)) {
+    return { error: "Invalid contact status." };
+  }
+
   // Normalize brands: trim, drop blanks, map aliases to canonical names, and
   // deduplicate case-insensitively. Storing canonical values is what makes the
   // brand filter reliable (see lib/businesses/brands.ts).
@@ -72,6 +83,7 @@ export function buildValues(
       supported_brands: supportedBrands,
       notes: cleanText(input.notes),
       status,
+      contact_status: contactStatus,
     },
   };
 }

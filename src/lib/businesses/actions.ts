@@ -4,10 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveBusinessesByIds } from "@/lib/businesses/queries";
 import { buildValues, isUuid } from "@/lib/businesses/validation";
 import {
+  CONTACT_STATUS_VALUES,
   MAX_IMPORT_ROWS,
   type BusinessActionResult,
   type BusinessImportResult,
   type BusinessInput,
+  type ContactStatus,
   type ImportRowError,
   type MergeInput,
   type MergeResult,
@@ -147,6 +149,48 @@ export async function restoreBusiness(
   if (error) return { error: error.message };
   if (!data || data.length === 0) {
     return { error: "This record could not be restored. Refresh and try again." };
+  }
+  return {};
+}
+
+/**
+ * Set the contact (outreach) status of a single ACTIVE business record (Block 15).
+ * A focused, low-risk UPDATE that touches ONLY contact_status (+ modified_by, as
+ * the UPDATE policy requires) — it deliberately does not run buildValues or touch
+ * any other field. Validates the UUIDs and the enum value, and guards on
+ * workspace_id + deleted_at IS NULL + .select("id") so an archived, foreign, or
+ * missing row aborts cleanly. RLS (membership + modified_by = auth.uid()) is the
+ * backstop. The set_updated_at trigger bumps updated_at, as for any edit.
+ */
+export async function setContactStatus(
+  workspaceId: string,
+  id: string,
+  contactStatus: ContactStatus
+): Promise<BusinessActionResult> {
+  if (!isUuid(workspaceId) || !isUuid(id)) {
+    return { error: "Invalid request." };
+  }
+  if (!CONTACT_STATUS_VALUES.includes(contactStatus)) {
+    return { error: "Invalid contact status." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { data, error } = await supabase
+    .from("businesses")
+    .update({ contact_status: contactStatus, modified_by: user.id })
+    .eq("id", id)
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .select("id");
+
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) {
+    return { error: "This record could not be updated. Refresh and try again." };
   }
   return {};
 }
@@ -318,9 +362,15 @@ export async function mergeBusinesses(
     supportedBrands: sourceFor("supportedBrands").supportedBrands,
     notes: sourceFor("notes").notes,
     status: sourceFor("status").status,
+    // Block 15: contact_status is NOT a user-selectable merge field (it's absent
+    // from MERGEABLE_FIELDS / the merge UI), but buildValues now always emits
+    // contact_status — so we MUST carry it explicitly or the survivor's value
+    // would be reset to the default. Always keep the survivor's contact status.
+    contactStatus: sourceFor("contactStatus").contactStatus,
   };
-  // NOTE: the fields above mirror MERGEABLE_FIELDS in types.ts (the list the UI
-  // offers); keep them in sync if that list changes.
+  // NOTE: the writable text fields above mirror MERGEABLE_FIELDS in types.ts (the
+  // list the UI offers); keep them in sync if that list changes. contactStatus is
+  // intentionally extra — preserved from the survivor, not chosen in the UI.
 
   const built = buildValues(composed);
   if (built.error || !built.values) {

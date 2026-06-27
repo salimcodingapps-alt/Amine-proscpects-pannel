@@ -19,7 +19,7 @@ import {
 import { StatusBadge } from "@/components/business/status-badge";
 import { BrandLogoChip } from "@/components/business/brand-logo-chip";
 import {
-  BUSINESS_STATUSES,
+  CONTACT_STATUSES,
   type ValueCount,
   type WorkspaceDashboardStats,
 } from "@/lib/businesses/types";
@@ -140,7 +140,7 @@ export function DashboardOverview({
   const {
     activeTotal,
     archivedTotal,
-    statusCounts,
+    contactStatusCounts,
     topWilayas,
     topBrands,
     topCapped,
@@ -160,19 +160,21 @@ export function DashboardOverview({
         <StatCard label="Archived" value={archivedTotal} icon={Archive} />
       </div>
 
-      {/* Status breakdown */}
+      {/* Contact-status breakdown (Block 15 — the user-facing outreach workflow) */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">By status</CardTitle>
+          <CardTitle className="text-sm font-medium">By contact status</CardTitle>
         </CardHeader>
         <CardContent className="pt-0">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {BUSINESS_STATUSES.map((status) => (
-              <div key={status} className="flex flex-col gap-2">
+            {CONTACT_STATUSES.map((cs) => (
+              <div key={cs.value} className="flex flex-col gap-2">
                 <span className="text-2xl font-semibold tabular-nums text-foreground">
-                  {statusCounts[status].toLocaleString()}
+                  {contactStatusCounts[cs.value].toLocaleString()}
                 </span>
-                <StatusBadge status={status} />
+                <span className="text-xs font-medium text-muted-foreground">
+                  {cs.label}
+                </span>
               </div>
             ))}
           </div>

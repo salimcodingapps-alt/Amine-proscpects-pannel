@@ -10,6 +10,34 @@ export const BUSINESS_STATUSES: BusinessStatus[] = [
 ];
 
 /**
+ * Block 15 — Contact status. A SEPARATE outreach-tracking field, independent of
+ * the lifecycle `BusinessStatus` above (which the dashboard metrics rely on).
+ * Enum labels are snake_case to match the DB enum `public.contact_status`;
+ * human labels live in CONTACT_STATUSES below.
+ */
+export type ContactStatus =
+  | "not_contacted"
+  | "contacted"
+  | "no_answer"
+  | "not_interested";
+
+/** Display labels for the contact statuses, in select order. */
+export const CONTACT_STATUSES: { value: ContactStatus; label: string }[] = [
+  { value: "not_contacted", label: "Not contacted" },
+  { value: "contacted", label: "Contacted" },
+  { value: "no_answer", label: "No answer" },
+  { value: "not_interested", label: "Not interested" },
+];
+
+/** New records start here; existing rows are backfilled to this in migration 0005. */
+export const DEFAULT_CONTACT_STATUS: ContactStatus = "not_contacted";
+
+/** Quick membership check for validating untrusted (URL / client) values. */
+export const CONTACT_STATUS_VALUES: ContactStatus[] = CONTACT_STATUSES.map(
+  (s) => s.value
+);
+
+/**
  * A business record as used in the app (camelCase view of the DB row). Only the
  * columns the UI actually needs are surfaced; reserved placeholder columns
  * (duplicate_score, latitude, longitude) are intentionally omitted for now.
@@ -30,6 +58,8 @@ export interface Business {
   supportedBrands: string[];
   notes: string | null;
   status: BusinessStatus;
+  /** Block 15: outreach-tracking status, separate from the lifecycle status. */
+  contactStatus: ContactStatus;
   createdAt: string;
   updatedAt: string;
   /** Soft-delete timestamp: null = active; non-null = archived (Block 9). */
@@ -51,6 +81,8 @@ export interface BusinessInput {
   supportedBrands?: string[];
   notes?: string | null;
   status?: BusinessStatus;
+  /** Block 15: defaults to 'not_contacted' when omitted. */
+  contactStatus?: ContactStatus;
 }
 
 /** Result shape returned by business server actions. */
@@ -88,6 +120,8 @@ export interface BusinessListFilters {
   /** Free-text search across the configured columns (sanitized server-side). */
   search?: string;
   status?: BusinessStatus;
+  /** Block 15: exact-match filter on the contact (outreach) status. */
+  contactStatus?: ContactStatus;
   wilaya?: string;
   businessType?: string;
   /** Single supported-brand value; matched against the supported_brands array. */
@@ -243,24 +277,34 @@ export interface ValueCount {
   count: number;
 }
 
-/** Active-record count for each of the four business statuses. */
+/** Active-record count for each of the four business (lifecycle) statuses. */
 export type StatusCounts = Record<BusinessStatus, number>;
+
+/** Block 15: active-record count for each of the four contact statuses. */
+export type ContactStatusCounts = Record<ContactStatus, number>;
 
 /**
  * Read-only metrics for the dashboard overview, scoped to one workspace.
  *
- * `activeTotal`, `archivedTotal`, and `statusCounts` are EXACT (computed with
- * head-only `count` queries — no rows transferred). `topWilayas` / `topBrands`
- * are aggregated in-app from a capped scan of active rows: `topCapped` is true
- * when the cap was hit (so the lists may be incomplete) and `topScanned` is how
- * many active rows were actually examined. Nothing here writes to the database.
+ * `activeTotal`, `archivedTotal`, and `contactStatusCounts` are EXACT (computed
+ * with head-only `count` queries — no rows transferred). `topWilayas` /
+ * `topBrands` are aggregated in-app from a capped scan of active rows:
+ * `topCapped` is true when the cap was hit (so the lists may be incomplete) and
+ * `topScanned` is how many active rows were actually examined. Nothing here
+ * writes to the database.
  */
 export interface WorkspaceDashboardStats {
-  /** Active (not soft-deleted) records — equals the sum of statusCounts. */
+  /** Active (not soft-deleted) records — equals the sum of contactStatusCounts. */
   activeTotal: number;
   /** Soft-deleted (archived) records. */
   archivedTotal: number;
-  statusCounts: StatusCounts;
+  /**
+   * Block 15: active-record counts by CONTACT status (the user-facing outreach
+   * workflow). The dashboard breakdown now uses this instead of the lifecycle
+   * status counts. contact_status is a NOT NULL enum, so the four counts sum to
+   * activeTotal — same invariant the lifecycle counts had.
+   */
+  contactStatusCounts: ContactStatusCounts;
   /** Most common wilayas among scanned active rows (desc by count). */
   topWilayas: ValueCount[];
   /** Most common supported brands among scanned active rows (desc by count). */

@@ -9,8 +9,10 @@ import {
 import {
   BUSINESS_SORTS,
   BUSINESS_STATUSES,
+  CONTACT_STATUS_VALUES,
   type BusinessSort,
   type BusinessStatus,
+  type ContactStatus,
 } from "@/lib/businesses/types";
 import {
   listMyWorkspaces,
@@ -53,6 +55,12 @@ export default async function DatabasePage({
   const status = BUSINESS_STATUSES.includes(statusRaw as BusinessStatus)
     ? (statusRaw as BusinessStatus)
     : undefined;
+  const contactRaw = firstParam(sp.contact);
+  const contactStatus = CONTACT_STATUS_VALUES.includes(
+    contactRaw as ContactStatus
+  )
+    ? (contactRaw as ContactStatus)
+    : undefined;
   const wilaya = firstParam(sp.wilaya);
   const businessType = firstParam(sp.type);
   const brand = firstParam(sp.brand);
@@ -68,6 +76,7 @@ export default async function DatabasePage({
   const hasFilters = Boolean(
     search.trim() ||
       status ||
+      contactStatus ||
       wilaya.trim() ||
       businessType.trim() ||
       brand.trim()
@@ -79,6 +88,7 @@ export default async function DatabasePage({
       listBusinesses(supabase, active.id, {
         search,
         status,
+        contactStatus,
         wilaya,
         businessType,
         brand,

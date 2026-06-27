@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   BUSINESS_SORTS,
   BUSINESS_STATUSES,
+  CONTACT_STATUSES,
   DEFAULT_BUSINESS_SORT,
 } from "@/lib/businesses/types";
 
@@ -27,7 +28,7 @@ const INPUT_CLASS = "h-10 rounded-lg bg-secondary/30 hover:bg-secondary/50";
 const SEARCH_DEBOUNCE_MS = 350;
 
 /** URL param keys owned by the toolbar. */
-const PARAM_KEYS = ["q", "status", "wilaya", "type", "brand", "sort", "page", "view"];
+const PARAM_KEYS = ["q", "status", "contact", "wilaya", "type", "brand", "sort", "page", "view"];
 
 /**
  * Search / filter / sort controls for the database list. The toolbar holds no
@@ -49,6 +50,7 @@ export function BusinessToolbar() {
   const [brand, setBrand] = useState(searchParams.get("brand") ?? "");
 
   const status = searchParams.get("status") ?? "";
+  const contact = searchParams.get("contact") ?? "";
   const sort = searchParams.get("sort") ?? DEFAULT_BUSINESS_SORT;
   const archived = searchParams.get("view") === "archived";
 
@@ -189,7 +191,7 @@ export function BusinessToolbar() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-x-3 gap-y-4 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-4 border-t border-border pt-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="bt-status" className={LABEL_CLASS}>
             Status
@@ -204,6 +206,25 @@ export function BusinessToolbar() {
             {BUSINESS_STATUSES.map((s) => (
               <option key={s} value={s} className="capitalize">
                 {s}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bt-contact" className={LABEL_CLASS}>
+            Contact status
+          </Label>
+          <select
+            id="bt-contact"
+            value={contact}
+            onChange={(e) => commit({ contact: e.target.value })}
+            className={FIELD_CLASS}
+          >
+            <option value="">All contact</option>
+            {CONTACT_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
           </select>
